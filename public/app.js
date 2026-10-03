@@ -83,6 +83,7 @@ window.addEventListener('keydown',async e=>{
 });
 window.addEventListener('keyup',e=>{computer.delete(e.code);off('computer:'+e.code);});
 window.addEventListener('blur',silenceAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)silenceAll();});
+let bpm=120;
 let looper,looperStarting,loopBusy=false,lastLoopMessage=-1,lastLoopRevision=-1;
 const loopProgress=$('#loop-progress');
 async function ensureLooper(){
@@ -90,7 +91,7 @@ async function ensureLooper(){
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
  if(looper)return looper;
  if(!looperStarting)looperStarting=Looper.create(context,synth.input,synth.compressor,renderLoop,notice)
-   .then(value=>{looper=value;return value;}).finally(()=>{looperStarting=null;});
+   .then(value=>{looper=value;looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
 async function loopCommand(type,track){
@@ -108,6 +109,9 @@ function renderLoop(state){
  loopProgress.value=state.length?state.position/state.length:0;
  if(state.revision===lastLoopRevision)return;
  lastLoopRevision=state.revision;
+ if(Number.isFinite(state.bpm))bpm=state.bpm;
+ $('#tempo').value=bpm;
+ $('#tempo').disabled=active;
  $('#loop-transport').disabled=!state.length&&!active;
  $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
  $('#loop-reset').disabled=!state.length&&!active;
@@ -118,6 +122,9 @@ function renderLoop(state){
   record.textContent=state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
   record.setAttribute('aria-pressed',String(state.active===i));
   mute.textContent=t.muted?'▶':'■';mute.disabled=!t.hasAudio;mute.setAttribute('aria-pressed',String(!t.muted&&t.hasAudio));
+  const double=row.querySelector('[data-loop-action="double"]');
+  double.disabled=!t.canDouble;
+  row.querySelector('.track-length').textContent=t.hasAudio?(t.multiple||1)+'×':'';
   clear.disabled=!t.hasAudio&&state.active!==i;
  }
  if(state.message&&state.revision!==lastLoopMessage){notice(state.message);lastLoopMessage=state.revision;}
@@ -127,6 +134,11 @@ for(const b of $$('[data-loop-action]'))b.onclick=()=>{
  const type=b.dataset.loopAction,track=Number(b.dataset.track);
  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
  loopCommand(type,track);
+};
+$('#tempo').onchange=event=>{
+ const value=Number(event.target.value);
+ if(!Number.isFinite(value)||value<40||value>240){event.target.value=bpm;return;}
+ if(looper)looper.command('tempo',undefined,value);else bpm=value;
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
 $('#loop-reset').onclick=()=>{if(confirm('¿Borrar las cinco pistas y empezar una sesión nueva?'))loopCommand('reset');};

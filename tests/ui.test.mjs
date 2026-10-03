@@ -24,7 +24,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   return e;
  });
  const actions=buttons.filter(b=>b.dataset.loopAction);
- assert.equal(actions.length,15);
+ assert.equal(actions.length,20);
  const document={hidden:false,activeElement:null,
   querySelector:selector=>selector.startsWith('#')?(ids.get(selector.slice(1))||null):document.querySelectorAll(selector)[0]||null,
   querySelectorAll:selector=>{
@@ -37,9 +37,9 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   createElement:()=>new Element(),addEventListener(){}
  };
  let core,publish;
- const engine={command(type,track){
+ const engine={command(type,track,value){
   if(type==='record'&&!core.tracks[track].data)core.command({type:'prepare',track,data:new Float32Array(core.capacity)});
-  core.command({type,track});publish();
+  core.command({type,track,value});publish();
  }};
  const FakeLooper={async create(ctx,src,dest,onState){
   core=new LoopCore(1000);publish=()=>{engine.state=core.state();onState(engine.state);};return engine;
@@ -68,5 +68,16 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  await click('mute',0);assert.equal(core.tracks[0].muted,true);
  await click('mute',0);assert.equal(core.tracks[0].muted,false);
  for(let i=1;i<5;i++){await click('record',i);assert.equal(core.active,i);core.process(new Float32Array(1000).fill(.1),new Float32Array(1000));publish();assert.equal(core.tracks[i].hasAudio,true);}
+ await click('double',0);
+ assert.equal(core.tracks[0].length,2000);
+ assert.equal(ids.get('track-0').querySelector('.track-length').textContent,'2×');
+ ids.get('tempo').onchange({target:{value:'180'}});
+ assert.equal(core.speed,1.5);
+ ids.get('tempo').value='19';publish();
+ assert.equal(ids.get('tempo').value,'19','progress updates must not overwrite tempo while typing');
+ await click('record',0);
+ assert.equal(ids.get('tempo').disabled,true);
+ await click('record',0);
+ assert.equal(ids.get('tempo').disabled,false);
  await click('clear',3);assert.equal(core.tracks[3].hasAudio,false);
 });

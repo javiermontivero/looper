@@ -3,12 +3,14 @@
 Versión 0.2 desplegada con autorización del usuario. Incluye cinco pistas de grabación y overdub.
 
 ## Instrumento
-12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI, táctil y de computadora. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
+12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y cinco pistas. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
 
 ## Grabación
 - Cinco pistas de audio mono. Cada una puede mezclar sonidos distintos mediante overdub.
 - La primera grabación define una duración libre entre 0,25 y 60 segundos; pulsar Cerrar comienza el loop. Al llegar a 60 segundos se cierra automáticamente.
-- Las otras pistas comparten duración y posición. Una pista vacía graba exactamente una vuelta desde la posición actual y después reproduce. También puede cerrarse antes; los sectores no grabados quedan en silencio.
+- Las pistas nuevas parten de la duración base. Una pista vacía graba exactamente una vuelta desde la posición actual y después reproduce. También puede cerrarse antes; los sectores no grabados quedan en silencio.
+- ×2 en el menú de una pista duplica su audio y duración (1×, 2×, 4×…), sin modificar las demás ni reiniciar su posición. Límite: 60 segundos de audio original por pista. Se desactiva durante captura.
+- BPM de referencia entre 40 y 240: el valor usado al grabar la primera toma representa velocidad 1×. Cambiarlo acelera/frena todas las pistas proporcionalmente y también cambia su tono; no detecta BPM ni agrega metrónomo. No afecta las notas del sintetizador en vivo. Se bloquea durante captura. Una sesión nueva conserva el número y lo usa como nueva referencia.
 - Overdub suma audio hasta volver a pulsar Cerrar. No hay editor, cuantización, undo ni estiramiento de tiempo.
 - Apagar silencia la reproducción con una rampa corta; el reloj sigue. Encender retoma en la posición actual. La entrada en vivo sigue audible.
 - Una captura activa a la vez. Cambiar la pista que graba cierra la anterior.
@@ -26,7 +28,7 @@ JavaScript ES modules y Web Audio sin dependencias de terceros. Node sirve archi
 `node --test`: incluye regresiones de MIDI, síntesis, servidor y reloj de muestras del looper.
 `python3 tests/validate_static.py`: comprobaciones offline de módulos publicados y controles.
 
-Las 17 pruebas Node pasaron durante la construcción de la imagen desplegada. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
+Las 25 pruebas Node pasaron durante la construcción de la imagen desplegada. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
 
 ## Despliegue
-Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen anterior y no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
+Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.

@@ -16,13 +16,13 @@ export class Looper {
     this.node.onprocessorerror=()=>{this.failed=true;source.disconnect(this.node);this.node.disconnect();onError('El motor de grabación se detuvo. El sintetizador sigue disponible; recargá para iniciar una sesión nueva.');};
     source.connect(this.node);this.node.connect(destination);
   }
-  command(type,track){
+  command(type,track,value){
     if(this.failed)throw new Error('El motor de grabación no está disponible.');
     if(type==='record'&&!this.prepared.has(track)){
       const data=new Float32Array(Math.ceil(this.context.sampleRate*60));
       this.node.port.postMessage({type:'prepare',track,data},[data.buffer]);
       this.prepared.add(track);
     }
-    this.node.port.postMessage({type,track});
+    this.node.port.postMessage({type,track,value});
   }
 }
