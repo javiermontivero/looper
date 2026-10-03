@@ -33,7 +33,7 @@ function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000)lastMidiDelay=delay;}const channel=device+':'+e.channel,key=channel+':'+e.number;
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
- for(const action of ['volume','previous','next','track0','track1','track2','track3','track4']){if(!matches(mappings[action],e,device))continue;
+ for(const action of ['volume','previous','next',...Array.from({length:trackCount},(_,i)=>'track'+i)]){if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=buttonDown(e);
   if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
@@ -85,59 +85,82 @@ window.addEventListener('keydown',async e=>{
 });
 window.addEventListener('keyup',e=>{computer.delete(e.code);off('computer:'+e.code);});
 window.addEventListener('blur',silenceAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)silenceAll();});
-let bpm=120;
+let bpm=120,trackCount=1;
+
 let looper,looperStarting,loopBusy=false,lastLoopMessage=-1,lastLoopRevision=-1;
 const loopProgress=$('#loop-progress');
 async function ensureLooper(){
  if(!(await activate()))throw new Error('Activá el audio para grabar.');
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
  if(looper)return looper;
+ const requestedTracks=trackCount;
  if(!looperStarting)looperStarting=Looper.create(context,synth.input,synth.compressor,renderLoop,notice)
-   .then(value=>{looper=value;looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
+   .then(value=>{looper=value;for(let i=1;i<requestedTracks;i++)looper.command('add');looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
 async function loopCommand(type,track){
  try{
   if(type==='record'||type==='trigger'){
    if(loopBusy)return;loopBusy=true;
-   try{const engine=await ensureLooper();if(!document.hidden){if(synth.ready===false&&engine.state?.active!==track&&!(type==='trigger'&&engine.state?.tracks?.[track]?.hasAudio)){notice('Esperá a que cargue el sonido o elegí un Sinte FM.');return;}engine.command(type,track);}}finally{loopBusy=false;}
+   try{const engine=await ensureLooper();if(!document.hidden){if(synth.ready===false&&engine.state?.active!==track&&engine.state?.pending!==track&&!(type==='trigger'&&engine.state?.tracks?.[track]?.hasAudio)){notice('Esperá a que cargue el sonido o elegí un Sinte FM.');return;}engine.command(type,track);}}finally{loopBusy=false;}
   }else if(looper){if(type==='resume'&&!(await activate()))return;looper.command(type,track);}
  }catch(e){notice('Looper: '+errorText(e));}
 }
 function silenceAll(){panic();if(looper)loopCommand('pause');}
 function renderLoop(state){
- const active=state.active>=0;
+ const active=state.active>=0,pending=(state.pending??-1)>=0;
+ syncTracks(state.tracks.length);
 
- loopProgress.value=state.length?state.position/state.length:0;
+ const elapsed=active?state.elapsed:state.position/(context?.sampleRate||48000)/(state.speed||1);
+ const base=state.baseSeconds||32*60/bpm;
+ loopProgress.value=base?(elapsed%base)/base:0;
+ $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*8).toFixed(1)+'/8 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 8 compases · '+base.toFixed(1)+' s');
+ for(let i=0;i<state.tracks.length;i++){
+  const t=state.tracks[i];
+  $('#track-'+i).querySelector('.track-length').textContent=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';
+ }
  if(state.revision===lastLoopRevision)return;
  lastLoopRevision=state.revision;
  if(Number.isFinite(state.bpm))bpm=state.bpm;
  $('#tempo').value=bpm;
- $('#tempo').disabled=active;
+ $('#tempo').disabled=active||pending;
  $('#metronome').setAttribute('aria-pressed',String(!!state.metronome));
- $('#loop-transport').disabled=!state.length&&!active&&!state.metronome;
+ $('#loop-transport').disabled=!state.length&&!active&&!pending&&!state.metronome;
  $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
- $('#loop-reset').disabled=!state.length&&!active;
- for(let i=0;i<5;i++){
+ $('#loop-reset').disabled=!state.length&&!active&&!pending;
+ for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i],row=$('#track-'+i),record=row.querySelector('[data-loop-action="record"]'),mute=row.querySelector('[data-loop-action="mute"]'),clear=row.querySelector('[data-loop-action="clear"]');
   row.classList.toggle('recording',state.active===i);row.classList.toggle('muted',t.muted);row.classList.toggle('playing',t.hasAudio&&!t.muted&&!state.paused);
-  row.querySelector('.track-state').textContent=state.active===i?(t.mode==='overdub'?'DUB':'REC'):(t.hasAudio?(state.paused?'II':t.muted?'OFF':'ON'):'');
-  record.textContent=state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
-  record.setAttribute('aria-pressed',String(state.active===i));
+  row.querySelector('.track-state').textContent=state.pending===i?'ESPERA':state.active===i?(t.mode==='overdub'?'DUB':'REC'):(t.hasAudio?(state.paused?'II':t.muted?'OFF':'ON'):'');
+  record.textContent=state.pending===i?'Cancelar':state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
+  record.setAttribute('aria-pressed',String(state.active===i||state.pending===i));
   mute.textContent=t.muted?'▶':'■';mute.disabled=!t.hasAudio;mute.setAttribute('aria-pressed',String(!t.muted&&t.hasAudio));
-  const double=row.querySelector('[data-loop-action="double"]');
-  double.disabled=!t.canDouble;
-  row.querySelector('.track-length').textContent=t.hasAudio?(t.multiple||1)+'×':'';
-  clear.disabled=!t.hasAudio&&state.active!==i;
+  clear.disabled=!t.hasAudio&&state.active!==i&&state.pending!==i;
  }
  if(state.message&&state.revision!==lastLoopMessage){notice(state.message);lastLoopMessage=state.revision;}
 
 }
-for(const b of $$('[data-loop-action]'))b.onclick=()=>{
- const type=b.dataset.loopAction,track=Number(b.dataset.track);
- if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
- loopCommand(type,track);
-};
+function bindTrack(row){
+ for(const b of row.querySelectorAll('[data-loop-action]'))b.onclick=()=>{
+  const type=b.dataset.loopAction,track=Number(b.dataset.track);
+  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
+  loopCommand(type,track);
+ };
+ for(const b of row.querySelectorAll('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
+}
+function syncTracks(count){
+ if(trackCount===count)return;
+ while(trackCount<count){
+  const i=trackCount++,row=document.createElement('article');
+  row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(i+1));
+  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><button data-learn=\"track0\">Asignar MIDI</button><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace(/track0/g,'track'+i).replace(/pista 1/g,'pista '+(i+1)).replace(/Pista 1/g,'Pista '+(i+1)).replace('>01<','>'+String(i+1).padStart(2,'0')+'<');
+  $('#tracks').append(row);bindTrack(row);
+ }
+ while(trackCount>count){$('#track-'+(--trackCount)).remove();}
+ $('#add-track').disabled=trackCount>=16;renderMappings();
+}
+bindTrack($('#track-0'));
+$('#add-track').onclick=()=>{if(trackCount>=16)return;if(looper)looper.command('add');else syncTracks(trackCount+1);};
 let metroBusy=false;
 $('#metronome').onclick=async()=>{
  if(metroBusy)return;metroBusy=true;
@@ -147,10 +170,10 @@ $('#metronome').onclick=async()=>{
 $('#tempo').onchange=event=>{
  const value=Number(event.target.value);
  if(!Number.isFinite(value)||value<40||value>240){event.target.value=bpm;return;}
- if(looper)looper.command('tempo',undefined,value);else bpm=value;
+ if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 8 compases · '+(32*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
-$('#loop-reset').onclick=()=>{if(confirm('¿Borrar las cinco pistas y empezar una sesión nueva?'))loopCommand('reset');};
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;loopCommand('reset');}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 for(const category of [...new Set(PRESETS.map(p=>p.category))]){
  const group=document.createElement('optgroup');group.label=category;
@@ -161,7 +184,7 @@ $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);
 $('#settings-open').onclick=()=>$('#settings').showModal();
 $('#settings-close').onclick=()=>$('#settings').close();
 setPreset(preset);setVolume(volume);renderMappings();
-renderLoop({length:0,position:0,seconds:0,elapsed:0,active:-1,paused:false,revision:0,message:'',tracks:Array.from({length:5},()=>({hasAudio:false,muted:false,mode:'empty'}))});
+renderLoop({length:0,position:0,seconds:0,elapsed:0,active:-1,paused:false,revision:0,message:'',tracks:Array.from({length:1},()=>({hasAudio:false,muted:false,mode:'empty'}))});
 if(!window.isSecureContext)notice('Abrí la dirección HTTPS para usar MIDI y grabar.');
 if(window.isSecureContext&&navigator.permissions){navigator.permissions.query({name:'midi',sysex:false}).then(p=>{if(p.state==='granted')connect();}).catch(()=>{});}
 

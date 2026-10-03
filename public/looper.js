@@ -10,7 +10,7 @@ export class Looper {
       numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit'
     });
     this.node.port.onmessage=event=>{
-      this.state=event.data;this.hasAudio=this.state.tracks.some(t=>t.hasAudio)||this.state.active>=0;
+      this.state=event.data;this.hasAudio=this.state.tracks.some(t=>t.hasAudio)||this.state.active>=0||this.state.pending>=0;
       this.active=this.state.active;onState(this.state);
     };
     this.node.onprocessorerror=()=>{this.failed=true;source.disconnect(this.node);this.node.disconnect();onError('El motor de grabación se detuvo. El sintetizador sigue disponible; recargá para iniciar una sesión nueva.');};
@@ -23,6 +23,8 @@ export class Looper {
       this.node.port.postMessage({type:'prepare',track,data},[data.buffer]);
       this.prepared.add(track);
     }
+    if(type==='clear')this.prepared.delete(track);
+    if(type==='reset')this.prepared.clear();
     this.node.port.postMessage({type,track,value});
   }
 }

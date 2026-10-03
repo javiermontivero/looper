@@ -12,8 +12,11 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  class Element{
   constructor(){this.style={};this.dataset={};this.children=[];this.attrs={};this.classList={toggle(){}};this.queries=new Map();}
   setAttribute(k,v){this.attrs[k]=v;}
-  append(...children){this.children.push(...children);}
+  append(...children){this.children.push(...children);for(const c of children)if(c.id)ids.set(c.id,c);}
   replaceChildren(...children){this.children=[...children];}
+  remove(){ids.delete(this.id);}
+  set innerHTML(html){this.localButtons=[...html.matchAll(/<button\b([^>]*)>/g)].map(m=>{const e=new Element();for(const a of m[1].matchAll(/data-([a-z-]+)="([^"]+)"/g))e.dataset[a[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=a[2];buttons.push(e);if(e.dataset.loopAction)actions.push(e);return e;});}
+  querySelectorAll(selector){return (this.localButtons||[]).filter(b=>selector==='[data-learn]'?b.dataset.learn:b.dataset.loopAction);}
   querySelector(selector){if(!this.queries.has(selector))this.queries.set(selector,new Element());return this.queries.get(selector);}
  }
  const ids=new Map([...html.matchAll(/id="([^"]+)"/g)].map(m=>[m[1],new Element()]));
@@ -25,7 +28,8 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   return e;
  });
  const actions=buttons.filter(b=>b.dataset.loopAction);
- assert.equal(actions.length,20);
+ assert.equal(actions.length,3);
+ ids.get('track-0').localButtons=buttons.filter(b=>b.dataset.track==='0'||b.dataset.learn==='track0');
  const document={hidden:false,activeElement:null,
   querySelector:selector=>selector.startsWith('#')?(ids.get(selector.slice(1))||null):document.querySelectorAll(selector)[0]||null,
   querySelectorAll:selector=>{
@@ -72,27 +76,26 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(core.tracks[0].data[500],.5);
  await click('mute',0);assert.equal(core.tracks[0].muted,true);
  await click('mute',0);assert.equal(core.tracks[0].muted,false);
- for(let i=1;i<5;i++){await click('record',i);assert.equal(core.active,i);core.process(new Float32Array(1000).fill(.1),new Float32Array(1000));publish();assert.equal(core.tracks[i].hasAudio,true);}
- await click('double',0);
- assert.equal(core.tracks[0].length,2000);
- assert.equal(ids.get('track-0').querySelector('.track-length').textContent,'2×');
- ids.get('tempo').onchange({target:{value:'180'}});
- assert.equal(core.speed,1.5);
- ids.get('tempo').value='19';publish();
- assert.equal(ids.get('tempo').value,'19','progress updates must not overwrite tempo while typing');
- await click('record',0);
- assert.equal(ids.get('tempo').disabled,true);
- await click('record',0);
- assert.equal(ids.get('tempo').disabled,false);
- await click('clear',3);assert.equal(core.tracks[3].hasAudio,false);
+ for(let i=1;i<16;i++){
+  ids.get('add-track').onclick();
+  assert.equal(core.tracks.length,i+1);
+ }
+ assert.equal(ids.get('add-track').disabled,true);
+ await click('record',15);core.process(new Float32Array(1300).fill(.1),new Float32Array(1300));
+ await click('record',15);assert.equal(core.tracks[15].length,1300);assert.equal(core.length,1300);
+ ids.get('tempo').onchange({target:{value:'180'}});assert.equal(core.speed,1.5);
+ ids.get('tempo').value='19';publish();assert.equal(ids.get('tempo').value,'19');
+ await click('record',0);assert.equal(ids.get('tempo').disabled,true);await click('record',0);assert.equal(ids.get('tempo').disabled,false);
+ await click('clear',15);assert.equal(core.length,1000);
+ core.process(new Float32Array(10),new Float32Array(10));
  const midi=value=>globals.process({data:[0xb0,20,value]},'keyboard');
  const flush=()=>new Promise(setImmediate);
  buttons.find(b=>b.dataset.learn==='track3').onclick();
  midi(1);midi(0);await flush();
  assert.equal(core.active,-1,'learning consumes press and release');
- midi(1);await flush();assert.equal(core.active,3,'CC 1 starts an empty track');
- midi(1);await flush();assert.equal(core.active,3,'duplicate CC does not close it');
- midi(0);core.process(new Float32Array(100).fill(.2),new Float32Array(100));publish();
+ midi(1);await flush();assert.equal(core.pending,3,'CC 1 arms an empty track');
+ midi(1);await flush();assert.equal(core.pending,3,'duplicate CC does not cancel it');
+ midi(0);core.process(new Float32Array(Math.ceil((core.length-core.position)/core.speed)).fill(0),new Float32Array(Math.ceil((core.length-core.position)/core.speed)));core.process(new Float32Array(300).fill(.2),new Float32Array(300));publish();
  midi(127);await flush();assert.equal(core.active,-1,'next press closes the take');midi(0);
  midi(1);await flush();assert.equal(core.tracks[3].muted,true);midi(0);
  midi(1);await flush();assert.equal(core.tracks[3].muted,false);midi(0);
@@ -103,5 +106,6 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  await ids.get('metronome').onclick();
  assert.equal(core.metronome,true);assert.equal(ids.get('metronome').attrs['aria-pressed'],'true');
  await ids.get('metronome').onclick();assert.equal(core.metronome,false);
+ ids.get('loop-reset').onclick();assert.equal(core.tracks.length,1);assert.equal(ids.has('track-15'),false);
 
 });

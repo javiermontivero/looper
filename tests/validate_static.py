@@ -22,7 +22,7 @@ class Page(HTMLParser):
 page = Page()
 page.feed((PUBLIC / "index.html").read_text())
 assert len(page.ids) == len(set(page.ids)), "Duplicate DOM ids"
-for i in range(5):
+for i in range(1):
     assert "track-" + str(i) in page.ids
     for action in ("record", "mute", "clear"):
         assert (action, str(i)) in page.actions
@@ -45,4 +45,4 @@ assert "this.input.connect(this.compressor)" in synth
 assert "source.connect(this.node);this.node.connect(destination)" in (PUBLIC / "looper.js").read_text()
 assert json.loads((ROOT / "package.json").read_text())["version"] == "0.2.0"
 assert "version:'0.2.0'" in server
-print("PASS: 5 tracks, unique DOM ids, control bindings, all module/worklet assets served, capture routing, version 0.2.0")
+print("PASS: starts with 1 track, unique DOM ids, control bindings, all module/worklet assets served, capture routing, version 0.2.0")
