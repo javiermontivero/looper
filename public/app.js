@@ -136,7 +136,7 @@ function renderLoop(state){
  if(state.message&&state.revision!==lastLoopMessage){$('#loop-status').textContent=state.message;lastLoopMessage=state.revision;}
  else if(!state.message)$('#loop-status').textContent=active?(state.length?'Lo que tocás se suma solo a esta pista.':'Tocá tu frase y pulsá Cerrar para empezar a repetirla.'):state.paused?'Pausado. Reanudá para seguir desde esta posición.':'Elegí una pista para grabar. Cada pista nueva cierra automáticamente después de una vuelta.';
 }
-for(const b of $('[data-loop-action]'))b.onclick=()=>{
+for(const b of $$('[data-loop-action]'))b.onclick=()=>{
  const type=b.dataset.loopAction,track=Number(b.dataset.track);
  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
  loopCommand(type,track);
