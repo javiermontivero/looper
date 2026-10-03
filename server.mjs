@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const root=new URL('./public/',import.meta.url);
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.sh':'text/plain; charset=utf-8'};
-const allowed=new Set(['index.html','style.css','app.js','synth.js','instruments.js','sounds.html','midi.js','icon.svg','setup-https.sh','looper.js','loop-core.js','loop-worklet.js','loops.css']);
+const allowed=new Set(['index.html','style.css','app.js','synth.js','latency.js','instruments.js','sounds.html','midi.js','icon.svg','setup-https.sh','looper.js','loop-core.js','loop-worklet.js','loops.css']);
 export async function handler(req,res){
   const url=new URL(req.url,'http://localhost');
   let path=url.pathname.replace(/^\/looper(?=\/|$)/,'').replace(/^\//,'');

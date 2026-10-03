@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {PRESETS} from '../public/instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from '../public/midi.js';
+import {LatencyStats} from '../public/latency.js';
 import {LoopCore} from '../public/loop-core.js';
 
 test('UI boots and track buttons actually start, close, overdub and mute captured audio',async()=>{
@@ -60,7 +61,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout,clearTimeout,performance,
-  AudioContext,Synth,PRESETS,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
+  AudioContext,Synth,PRESETS,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
  assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,19,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');

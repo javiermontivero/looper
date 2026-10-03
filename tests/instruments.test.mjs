@@ -4,7 +4,7 @@ import {Synth,PRESETS,SAMPLES,drumForNote} from '../public/instruments.js';
 class Param{setTargetAtTime(){} }
 class Node{constructor(){this.gain=new Param();this.threshold={};this.ratio={};this.knee={};this.attack={};this.release={};}connect(n){this.destination=n;}disconnect(){}}
 function setup(){
- const context={currentTime:5,createGain:()=>new Node(),createDynamicsCompressor:()=>new Node(),destination:{}};
+ const context={currentTime:5,createGain:()=>new Node(),createWaveShaper:()=>new Node(),destination:{}};
  const instances=[],statuses=[];
  function factory(ctx,options){
   let resolve,reject;const instance={options,events:[],disposed:false,stops:0,ready:new Promise((a,b)=>{resolve=a;reject=b;}),

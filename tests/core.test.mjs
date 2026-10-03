@@ -22,8 +22,8 @@ test('MIDI learning reserves pedals and matches device and channel',()=>{
  assert.equal(learnMapping('volume',decode([0xb0,64,127]),'keyboard'),null);
 });
 class Param{constructor(){this.value=0;this.calls=[];}setValueAtTime(v){this.value=v;}linearRampToValueAtTime(v){this.value=v;}exponentialRampToValueAtTime(v){this.value=v;}setTargetAtTime(v){this.value=v;}cancelAndHoldAtTime(t){this.calls.push(t);}}
-class Node{constructor(){for(const p of ['gain','frequency','detune','Q','threshold','ratio','knee','attack','release'])this[p]=new Param();}connect(){}disconnect(){this.disconnected=true;}start(){}stop(t){this.stopped=t;}}
-function context(){return{currentTime:1,sampleRate:48000,destination:{},createGain:()=>new Node(),createOscillator:()=>new Node(),createBiquadFilter:()=>new Node(),createDynamicsCompressor:()=>new Node()};}
+class Node{constructor(){for(const p of ['gain','frequency','detune','Q','threshold','ratio','knee','attack','release'])this[p]=new Param();}connect(node){this.destination=node;}disconnect(){this.disconnected=true;}start(){}stop(t){this.stopped=t;}}
+function context(){return{currentTime:1,sampleRate:48000,destination:{},createGain:()=>new Node(),createOscillator:()=>new Node(),createBiquadFilter:()=>new Node(),createWaveShaper:()=>new Node()};}
 test('Sustain holds released notes only on its own channel',()=>{
  const s=new Synth(context());s.pedal('a',true);s.noteOn('a1',60,100,'a');s.noteOn('b1',64,100,'b');
  s.noteOff('a1');s.noteOff('b1');assert.equal(s.voices.get('a1').released,false);assert.equal(s.voices.get('b1').released,true);
@@ -56,4 +56,16 @@ test('HTTP serves health and prefixed assets; refuses paths outside allowlist',a
   assert.equal((await fetch(base+'/looper/setup-https.sh')).status,200);
   for(const asset of ['looper.js','loop-core.js','loop-worklet.js','loops.css'])assert.equal((await fetch(base+'/looper/'+asset)).status,200,asset);
  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('monitor uses a memoryless safety stage and diagnostic click bypasses capture',()=>{
+ const c=context(),oscillators=[],gains=[];
+ c.createOscillator=()=>{const n=new Node();oscillators.push(n);return n;};
+ c.createGain=()=>{const n=new Node();gains.push(n);return n;};
+ c.createDynamicsCompressor=()=>{throw Error('look-ahead must not return');};
+ const s=new Synth(c);assert.equal(s.input.destination,s.compressor);assert.equal(s.compressor.oversample,'none');
+ assert.equal(s.compressor.destination,s.master);assert.equal(s.master.destination,c.destination);
+ s.testClick();const osc=oscillators[0],amp=gains.at(-1);
+ assert.equal(amp.destination,s.master);assert.notEqual(amp.destination,s.input);
+ assert.ok(osc.stopped<=c.currentTime+.041);osc.onended();assert.equal(amp.disconnected,true);
 });

@@ -1,3 +1,4 @@
+import {LatencyStats} from './latency.js';
 import {PRESETS,Synth} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
@@ -8,6 +9,13 @@ let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
+const latencyStats=new LatencyStats();
+let directMidiClick=false;
+const midiActions=['volume','previous','next',...Array.from({length:16},(_,i)=>'track'+i)];
+if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
+ const observer=new PerformanceObserver(list=>{if(context?.state==='running')for(const entry of list.getEntries())latencyStats.task(entry.duration);});
+ observer.observe({type:'longtask',buffered:false});
+}
 const latches=new Map(),computer=new Set();
 const trackButtons=new TrackButtons(loopCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
@@ -24,16 +32,16 @@ async function activate(){
 function setPreset(p){preset=p;if(synth)synth.selectPreset(p);$('#sound').value=p.id;save('looper:preset',p.id);}
 function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);}
 let lastMidiDelay=null,volumeSaveTimer;
-function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;synth.noteOn(key,note,velocity,channel);}
+function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;const started=performance.now();try{if(directMidiClick)synth.testClick();else synth.noteOn(key,note,velocity,channel);}finally{latencyStats.add('note',performance.now()-started);}}
 function off(key){synth?.noteOff(key);}
 function panic(){synth?.panic();computer.clear();latches.clear();trackButtons.reset();}
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
 function setLearning(action){trackButtons.reset();learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
 function process(event,device){
  const e=decode(event.data);if(!e)return;
- if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000)lastMidiDelay=delay;}const channel=device+':'+e.channel,key=channel+':'+e.number;
+ if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
- for(const action of ['volume','previous','next',...Array.from({length:trackCount},(_,i)=>'track'+i)]){if(!matches(mappings[action],e,device))continue;
+ for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=buttonDown(e);
   if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
@@ -117,7 +125,8 @@ function renderLoop(state){
  $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*8).toFixed(1)+'/8 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 8 compases · '+base.toFixed(1)+' s');
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i];
-  $('#track-'+i).querySelector('.track-length').textContent=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';
+  const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';
+  if(label.textContent!==text)label.textContent=text;
  }
  if(state.revision===lastLoopRevision)return;
  lastLoopRevision=state.revision;
@@ -192,16 +201,26 @@ if(window.isSecureContext&&navigator.permissions){navigator.permissions.query({n
 
 const perfDetails=$('#performance-details'),perfReadout=$('#performance-readout');
 function showPerformance(){
+ const summary=kind=>{const s=latencyStats.summary(kind);return s?s.median.toFixed(2)+' / '+s.p95.toFixed(2)+' / '+s.max.toFixed(2)+' ms ('+s.count+' notas)':'sin datos';};
  const ms=value=>Number.isFinite(value)?(value*1000).toFixed(1)+' ms':'No informado';
  perfReadout.textContent=[
  'Audio: '+(context?.state||'apagado'),
  'Frecuencia: '+(context?.sampleRate||'—')+' Hz',
  'Latencia base informada: '+ms(context?.baseLatency),
  'Latencia de salida informada: '+ms(context?.outputLatency),
- 'Entrega del último evento MIDI: '+(lastMidiDelay===null?'sin datos':lastMidiDelay.toFixed(1)+' ms'),
+ 'Entrega MIDI → JS (mediana / p95 / máx): '+summary('delivery'),
+ 'Preparar nota (mediana / p95 / máx): '+summary('note'),
+ 'Bloqueos de interfaz ≥50 ms: '+latencyStats.longTasks+' · mayor '+latencyStats.longestTask.toFixed(1)+' ms',
+ 'Ruta: '+(directMidiClick?'clic directo':'instrumento')+' · salida sin look-ahead',
+ 'Estas cifras no miden tecla → parlante ni el tiempo físico del USB.',
  'Voces: '+((synth?.voices?.size||0)+(synth?.sampleVoices?.size||0)),
  'Looper: '+(!looper?'no iniciado':looper.state?.paused?'pausado':looper.state?.active>=0?'grabando':looper.state?.length?'reproduciendo':'vacío')
  ].join('\n');
 }
 perfDetails.ontoggle=()=>{if(perfDetails.open)showPerformance();};
 $('#refresh-performance').onclick=showPerformance;
+
+$('#direct-midi-click').onchange=e=>{panic();directMidiClick=e.target.checked;latencyStats.reset();showPerformance();};
+$('#test-click').onpointerdown=async e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();if(await activate())synth.testClick();};
+$('#test-click').onclick=async e=>{if(e.detail===0&&await activate())synth.testClick();};
+$('#reset-performance').onclick=()=>{latencyStats.reset();showPerformance();};

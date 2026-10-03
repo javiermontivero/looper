@@ -1,3 +1,4 @@
+import {safetyCurve} from './latency.js';
 export const PRESETS=[
 {id:'velvet',name:'Velvet EP',category:'Teclas',description:'Piano eléctrico suave, con brillo al tocar más fuerte.',ratio:1,index:2.3,attack:.008,decay:1.4,sustain:.14,release:.65,tone:5200},
 {id:'glass',name:'Glass Keys',category:'Teclas',description:'Campanas claras y una caída larga y brillante.',ratio:3.5,index:2.8,attack:.003,decay:2.1,sustain:.05,release:1.3,tone:8500},
@@ -14,7 +15,14 @@ export const PRESETS=[
 ];
 export const frequency=note=>440*2**((note-69)/12);
 export class Synth {
- constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.input=context.createGain();this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createDynamicsCompressor();Object.assign(this.compressor.threshold,{value:-12});this.compressor.ratio.value=16;this.compressor.knee.value=8;this.compressor.attack.value=.003;this.compressor.release.value=.15;this.input.connect(this.compressor);this.compressor.connect(this.master);this.master.connect(context.destination);}
+ constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.input=context.createGain();this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createWaveShaper();this.compressor.curve=safetyCurve();this.compressor.oversample='none';this.input.connect(this.compressor);this.compressor.connect(this.master);this.master.connect(context.destination);}
+ // Direct diagnostic click goes to monitor only, never into recorded audio.
+ testClick(){
+  const c=this.context,t=c.currentTime,osc=c.createOscillator(),amp=c.createGain();
+  osc.frequency.value=1000;amp.gain.setValueAtTime(.08,t);amp.gain.exponentialRampToValueAtTime(.0001,t+.035);
+  osc.connect(amp);amp.connect(this.master);osc.onended=()=>{osc.disconnect();amp.disconnect();};
+  osc.start(t);osc.stop(t+.04);
+ }
  volume(value){this.master.gain.setTargetAtTime(Math.max(0,Math.min(1,value)),this.context.currentTime,.015);}
  noteOn(key,note,velocity=100,channel='local'){
   this.stop(key,true);if(this.voices.size>=this.maxVoices)this.stop(this.voices.keys().next().value,true);

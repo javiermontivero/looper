@@ -25,7 +25,7 @@ Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voce
 - Audio en memoria: se pierde al recargar/cerrar. Sin persistencia, exportación, edición, undo ni estiramiento de tiempo.
 
 ## Motor
-AudioWorklet procesa captura y reproducción en un único reloj de muestras. Captura solo el bus del sintetizador, antes de compresión/volumen; el audio de los loops nunca realimenta la grabación. El sintetizador sigue conectado al monitor en vivo. Unos 11,5 MB por pista utilizada a 48 kHz / 60 s, asignados al prepararla y liberados al borrarla; agregar una pista vacía no reserva audio. No se mezclan pistas vacías, y las completamente silenciadas omiten interpolación de audio conservando su reloj. No se ha medido una mejora de latencia en el teléfono. Saturación del acumulador acotada y compresor compartido a la salida; las entradas/salidas del loop tienen microfundidos para evitar clics.
+AudioWorklet procesa captura y reproducción en un único reloj de muestras. Captura solo el bus del sintetizador, antes del control de picos/volumen; el audio de los loops nunca realimenta la grabación. El sintetizador sigue conectado al monitor en vivo. Unos 11,5 MB por pista utilizada a 48 kHz / 60 s, asignados al prepararla y liberados al borrarla; agregar una pista vacía no reserva audio. No se mezclan pistas vacías, y las completamente silenciadas omiten interpolación de audio conservando su reloj. No se ha medido una mejora de latencia en el teléfono. Saturación del acumulador acotada y curva de protección de picos sin look-ahead a la salida; las entradas/salidas del loop tienen microfundidos para evitar clics.
 
 JavaScript ES modules y Web Audio; smplr 1.1.0 se importa dinámicamente desde CDN para los instrumentos muestreados. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
 
@@ -37,3 +37,9 @@ La construcción ejecuta las pruebas Node antes de desplegar, incluyendo carga y
 
 ## Despliegue
 Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
+
+## Diagnóstico de latencia
+AudioContext solicita interactive. Las notas se disparan inmediatamente con nodos nativos de Web Audio: DSP/reproducción en el hilo de audio, eventos MIDI y creación de voces en el principal. No hay espera entre notas ni descarga por pulsación. El looper usa AudioWorklet.
+Se reemplazó DynamicsCompressorNode (look-ahead de aproximadamente 6 ms) por una curva estática sin oversampling, transparente hasta amplitud 0,8 y con saturación suave encima. No elimina los buffers de salida del navegador/Android.
+Ajustes → Rendimiento permite comparar el instrumento con un clic directo por MIDI y con un botón táctil (pointerdown, no espera a soltar). El clic va solo al monitor y no se graba. El modo de prueba no persiste al recargar.
+Mide las últimas 128 entregas MIDI y preparaciones de notas (mediana/p95/máximo), bloqueos del hilo principal y latencias base/salida informadas. Estadísticas solo se ordenan/renderizan al pedir Actualizar. No mide el tiempo físico del USB, ataque acústico, tecla→parlante ni garantiza que Android informe toda la demora.
