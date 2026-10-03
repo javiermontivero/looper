@@ -1,5 +1,5 @@
 import {PRESETS,Synth} from './synth.js';
-import {decode,matches,learnMapping} from './midi.js';
+import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
@@ -9,6 +9,7 @@ let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'
 let preset=PRESETS.find(p=>p.id===read('looper:preset','velvet'))||PRESETS[0];
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latches=new Map(),computer=new Set();
+const trackButtons=new TrackButtons(loopCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
 async function activate(){
@@ -25,17 +26,18 @@ function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume'
 let lastMidiDelay=null,volumeSaveTimer;
 function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;synth.noteOn(key,note,velocity,channel);}
 function off(key){synth?.noteOff(key);}
-function panic(){synth?.panic();computer.clear();latches.clear();}
+function panic(){synth?.panic();computer.clear();latches.clear();trackButtons.reset();}
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
-function setLearning(action){learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
+function setLearning(action){trackButtons.reset();learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
 function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000)lastMidiDelay=delay;}const channel=device+':'+e.channel,key=channel+':'+e.number;
- if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,e.value>=64);save('looper:mappings',mappings);setLearning(null);off(key);return;}}
+ if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of ['volume','previous','next','track0','track1','track2','track3','track4']){if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
-  const down=e.type==='on'||(e.type==='cc'&&e.value>=64);
-  if(down&&!latches.get(action)){if(action.startsWith('track'))loopCommand('mute',Number(action.slice(5)));else{const i=PRESETS.indexOf(preset);setPreset(PRESETS[(i+(action==='next'?1:-1)+PRESETS.length)%PRESETS.length]);}}
+  const down=buttonDown(e);
+  if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
+  if(down&&!latches.get(action)){{const i=PRESETS.indexOf(preset);setPreset(PRESETS[(i+(action==='next'?1:-1)+PRESETS.length)%PRESETS.length]);}}
   latches.set(action,down);return;
  }
  if(e.type==='on')on(key,e.number,e.value,channel);
@@ -71,7 +73,7 @@ $('#volume').oninput=e=>setVolume(Number(e.target.value));
 $('#panic').onclick=silenceAll;
 
 for(const b of $$('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
-$('#clear-mappings').onclick=()=>{mappings={};save('looper:mappings',mappings);latches.clear();learning=null;renderMappings();$('#learn-status').textContent='Asignaciones borradas.';};
+$('#clear-mappings').onclick=()=>{mappings={};save('looper:mappings',mappings);latches.clear();trackButtons.reset();learning=null;renderMappings();$('#learn-status').textContent='Asignaciones borradas.';};
 
 
 const keys=['KeyA','KeyW','KeyS','KeyE','KeyD','KeyF','KeyT','KeyG','KeyY','KeyH','KeyU','KeyJ','KeyK','KeyO','KeyL','KeyP','Semicolon'];
@@ -96,7 +98,7 @@ async function ensureLooper(){
 }
 async function loopCommand(type,track){
  try{
-  if(type==='record'){
+  if(type==='record'||type==='trigger'){
    if(loopBusy)return;loopBusy=true;
    try{const engine=await ensureLooper();if(!document.hidden)engine.command(type,track);}finally{loopBusy=false;}
   }else if(looper){if(type==='resume'&&!(await activate()))return;looper.command(type,track);}
@@ -112,7 +114,8 @@ function renderLoop(state){
  if(Number.isFinite(state.bpm))bpm=state.bpm;
  $('#tempo').value=bpm;
  $('#tempo').disabled=active;
- $('#loop-transport').disabled=!state.length&&!active;
+ $('#metronome').setAttribute('aria-pressed',String(!!state.metronome));
+ $('#loop-transport').disabled=!state.length&&!active&&!state.metronome;
  $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
  $('#loop-reset').disabled=!state.length&&!active;
  for(let i=0;i<5;i++){
@@ -134,6 +137,12 @@ for(const b of $$('[data-loop-action]'))b.onclick=()=>{
  const type=b.dataset.loopAction,track=Number(b.dataset.track);
  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
  loopCommand(type,track);
+};
+let metroBusy=false;
+$('#metronome').onclick=async()=>{
+ if(metroBusy)return;metroBusy=true;
+ try{const engine=await ensureLooper();if(!document.hidden)engine.command('metronome',undefined,!engine.state?.metronome);}
+ catch(error){notice('Metrónomo: '+errorText(error));}finally{metroBusy=false;}
 };
 $('#tempo').onchange=event=>{
  const value=Number(event.target.value);

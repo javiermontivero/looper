@@ -7,6 +7,10 @@ export class LoopCore {
     this.length=0;
     this.position=0;
     this.bpm=120;this.referenceBpm=120;this.speed=1;
+    this.metronome=false;this.beatPhase=1;this.clickIndex=0;
+    this.click=new Float32Array(Math.ceil(rate*.02));
+    for(let i=0;i<this.click.length;i++){const t=i/rate;this.click[i]=.18*Math.sin(2*Math.PI*1000*t)*Math.min(1,t/.001)*Math.exp(-t*240);}
+    this.clickIndex=this.click.length;
     this.active=-1;
     this.captured=0;
     this.paused=false;
@@ -17,6 +21,11 @@ export class LoopCore {
   touch(message='') { this.revision++; this.message=message; this.renderTracks=this.tracks.filter(t=>t.hasAudio||t.mode==='recording'||t.mode==='overdub'); this.edge=Math.min(Math.ceil(this.rate*.002),Math.floor(this.length/4)); }
   command(c) {
     if(!c||typeof c.type!=='string')return;
+    if(c.type==='metronome'){
+      if(typeof c.value!=='boolean')return;
+      this.metronome=c.value;this.beatPhase=1;this.clickIndex=this.click.length;
+      this.touch();return;
+    }
     if(c.type==='tempo'){
       if(!Number.isFinite(c.value)||c.value<40||c.value>240)return;
       if(this.active>=0){this.touch('Cerrá la grabación para cambiar el tempo.');return;}
@@ -25,13 +34,13 @@ export class LoopCore {
       this.speed=this.bpm/this.referenceBpm;this.touch();return;
     }
     if(c.type==='pause') {
-      this.finish(); this.paused=true; this.touch('Reproducción pausada.'); return;
+      this.finish(); this.paused=true;this.metronome=false; this.touch('Reproducción pausada.'); return;
     }
     if(c.type==='resume') { this.paused=false; this.touch(); return; }
     if(c.type==='reset') {
       for(const t of this.tracks){if(t.data)t.data.fill(0);t.hasAudio=false;t.length=0;t.position=0;t.edge=0;t.muted=false;t.gain=1;t.mode='empty';}
       this.length=0;this.position=0;this.active=-1;this.captured=0;this.paused=false;
-      this.referenceBpm=this.bpm;this.speed=1;
+      this.referenceBpm=this.bpm;this.speed=1;this.metronome=false;this.beatPhase=1;
       this.touch('Sesión vacía. La próxima grabación define el ciclo.');return;
     }
     if(c.type==='stop'){this.finish();return;}
@@ -62,7 +71,12 @@ export class LoopCore {
       if(!this.tracks.some(track=>track.hasAudio)&&this.active<0){this.length=0;this.position=0;this.referenceBpm=this.bpm;this.speed=1;}
       this.touch('Pista borrada.');return;
     }
-    if(c.type!=='record')return;
+    if(c.type==='trigger'&&this.active!==i&&t.hasAudio){
+      if(this.paused){this.paused=false;for(const other of this.tracks)if(other.hasAudio)other.muted=other!==t;}
+      else t.muted=!t.muted;
+      this.touch();return;
+    }
+    if(c.type!=='record'&&c.type!=='trigger')return;
     if(this.active===i){this.finish();return;}
     if(this.active>=0)this.finish();
     if(!t.data){this.touch('No se pudo preparar la memoria de la pista.');return;}
@@ -85,10 +99,16 @@ export class LoopCore {
     t.hasAudio=true;t.mode='playing';this.active=-1;this.captured=0;this.touch();
   }
   process(input,output) {
-    if(this.paused||(!this.length&&this.active<0)){output.fill(0);return;}
+    if(!this.metronome&&(this.paused||(!this.length&&this.active<0))){output.fill(0);return;}
     const ramp=1/Math.max(1,this.rate*.005);
     for(let frame=0;frame<output.length;frame++){
-      output[frame]=0;
+      let click=0;
+      if(this.metronome){
+        if(this.beatPhase>=1-1e-12){this.beatPhase=Math.max(0,this.beatPhase-1);this.clickIndex=0;}
+        if(this.clickIndex<this.click.length)click=this.click[this.clickIndex++];
+        this.beatPhase+=this.bpm/(60*this.rate);
+      }
+      output[frame]=click;
       if(this.paused)continue;
       const sample=Number.isFinite(input?.[frame])?input[frame]:0;
       if(!this.length){
@@ -125,7 +145,7 @@ export class LoopCore {
         }
         t.position=(position+this.speed)%t.length;
       }
-      output[frame]=mixed;
+      output[frame]+=mixed;
       this.position=(this.position+this.speed)%this.length;
       if(this.active>=0){
         this.captured+=this.speed;
@@ -135,7 +155,7 @@ export class LoopCore {
   }
   state() {
     return {length:this.length,position:this.position,seconds:this.length/this.rate,
-      bpm:this.bpm,referenceBpm:this.referenceBpm,speed:this.speed,
+      metronome:this.metronome,bpm:this.bpm,referenceBpm:this.referenceBpm,speed:this.speed,
       elapsed:this.captured/this.rate/this.speed,active:this.active,paused:this.paused,
       revision:this.revision,message:this.message,
       tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,mode:t.mode,length:t.length,multiple:this.length?t.length/this.length:0,canDouble:t.hasAudio&&this.active<0&&t.length*2<=this.capacity}))};

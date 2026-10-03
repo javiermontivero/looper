@@ -18,7 +18,7 @@ export class Looper {
   }
   command(type,track,value){
     if(this.failed)throw new Error('El motor de grabación no está disponible.');
-    if(type==='record'&&!this.prepared.has(track)){
+    if((type==='record'||type==='trigger')&&!this.prepared.has(track)){
       const data=new Float32Array(Math.ceil(this.context.sampleRate*60));
       this.node.port.postMessage({type:'prepare',track,data},[data.buffer]);
       this.prepared.add(track);

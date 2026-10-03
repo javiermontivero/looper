@@ -17,6 +17,38 @@ export function matches(mapping,event,device){
 export function learnMapping(action,event,device){
  if(action==='volume'&&event.type!=='cc')return null;
  if(event.type!=='cc'&&event.type!=='on')return null;
+ if(action!=='volume'&&event.type==='cc'&&event.value===0)return null;
  if(event.type==='cc'&&[64,120,121,123].includes(event.number))return null;
  return{device,channel:event.channel,number:event.number,type:event.type==='cc'?'cc':'note'};
+}
+
+export function buttonDown(event){
+ return event.type==='on'||(event.type==='cc'&&event.value>0);
+}
+
+// A momentary MIDI button sends a nonzero value on press and zero on release.
+// Queue actions so a quick second press cannot overtake AudioWorklet startup.
+export class TrackButtons{
+ constructor(dispatch,{holdMs=1000,schedule=setTimeout,cancel=clearTimeout,onError=()=>{}}={}){
+  this.dispatch=dispatch;this.holdMs=holdMs;this.schedule=schedule;this.cancel=cancel;
+  this.onError=onError;this.held=new Map();this.pending=Promise.resolve();this.generation=0;
+ }
+ enqueue(type,track){
+  const generation=this.generation;
+  this.pending=this.pending.then(()=>{if(generation===this.generation)return this.dispatch(type,track);}).catch(this.onError);
+ }
+ suppress(track){this.release(track);this.held.set(track,null);}
+ release(track){if(this.held.has(track)){this.cancel(this.held.get(track));this.held.delete(track);}}
+ handle(track,down){
+  if(!down){this.release(track);return;}
+  if(this.held.has(track))return;
+  this.enqueue('trigger',track);
+  this.held.set(track,this.schedule(()=>{
+   if(this.held.has(track)){this.held.set(track,null);this.enqueue('clear',track);}
+  },this.holdMs));
+ }
+ reset(){
+  for(const track of this.held.keys())this.release(track);
+  this.generation++;
+ }
 }

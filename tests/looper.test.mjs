@@ -122,3 +122,51 @@ test('tempo validates values, locks during capture and reanchors a new session',
  c.command({type:'reset'});assert.equal(c.speed,1);assert.equal(c.referenceBpm,200);
  assert.ok(c.tracks.every(t=>t.length===0&&t.position===0));
 });
+
+test('track trigger starts empty, closes capture, then toggles only playback at current phase',()=>{
+ const c=core();prepare(c,0);
+ c.command({type:'trigger',track:0});assert.equal(c.active,0);
+ run(c,Array(20).fill(.2));c.command({type:'trigger',track:0});
+ assert.equal(c.active,-1);assert.equal(c.tracks[0].hasAudio,true);
+ run(c,Array(3).fill(0));c.command({type:'trigger',track:0});
+ assert.equal(c.tracks[0].muted,true);assert.equal(c.active,-1);
+ run(c,Array(5).fill(0));c.command({type:'trigger',track:0});
+ assert.equal(c.tracks[0].muted,false);assert.equal(c.tracks[0].position,8);
+});
+test('track trigger resumes after global pause and held clear discards active capture',()=>{
+ const c=core();record(c,0,Array(20).fill(.2));record(c,2,Array(20).fill(.1));c.command({type:'pause'});
+ c.command({type:'trigger',track:0});assert.equal(c.paused,false);assert.equal(c.tracks[0].muted,false);assert.equal(c.tracks[2].muted,true,'only selected track resumes');
+ prepare(c,1);c.command({type:'trigger',track:1});run(c,[.2,.2]);c.command({type:'clear',track:1});
+ assert.equal(c.active,-1);assert.equal(c.tracks[1].hasAudio,false);
+ assert.ok(c.tracks[1].data.every(x=>x===0));assert.equal(c.tracks[0].hasAudio,true);
+});
+function clickStarts(c,samples,chunk=128){
+ const output=[];let remaining=samples;
+ while(remaining){const n=Math.min(chunk,remaining),buf=new Float32Array(n);c.process(undefined,buf);output.push(...buf);remaining-=n;}
+ const starts=[];let last=-10000;
+ for(let i=0;i<output.length;i++)if(Math.abs(output[i])>1e-5){if(i-last>c.rate*.03)starts.push(i);last=i;}
+ return starts;
+}
+test('metronome ticks at exact BPM across render blocks even without recorded tracks',()=>{
+ for(const bpm of [60,120,137,240]){
+  const c=new LoopCore(48000);c.command({type:'tempo',value:bpm});c.command({type:'metronome',value:true});
+  const starts=clickStarts(c,48000*3),period=48000*60/bpm;
+  assert.ok(starts.length>=3);
+  for(let i=1;i<starts.length;i++)assert.ok(Math.abs(starts[i]-starts[0]-i*period)<=1);
+  assert.equal(c.length,0);assert.ok(c.tracks.every(t=>t.data===null));
+ }
+});
+test('metronome follows tempo changes and never enters recorded audio or overdub',()=>{
+ const c=new LoopCore(48000);c.command({type:'metronome',value:true});
+ clickStarts(c,48000);c.command({type:'tempo',value:240});
+ const starts=clickStarts(c,48000);assert.equal(starts[1]-starts[0],12000);
+ prepare(c,0);c.command({type:'trigger',track:0});
+ assert.ok(clickStarts(c,24000).length>0);c.command({type:'trigger',track:0});
+ assert.ok(c.tracks[0].data.every(x=>x===0));
+ c.command({type:'record',track:0});clickStarts(c,24000);c.command({type:'stop'});
+ assert.ok(c.tracks[0].data.every(x=>x===0));
+ c.command({type:'metronome',value:false});
+ assert.ok(run(c,Array(100).fill(0)).every(x=>x===0));
+ c.command({type:'metronome',value:true});c.command({type:'pause'});
+ assert.equal(c.metronome,false);assert.ok(run(c,Array(100).fill(0)).every(x=>x===0));
+});

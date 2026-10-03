@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {PRESETS} from '../public/synth.js';
+import {decode,matches,learnMapping,buttonDown,TrackButtons} from '../public/midi.js';
 import {LoopCore} from '../public/loop-core.js';
 
 test('UI boots and track buttons actually start, close, overdub and mute captured audio',async()=>{
@@ -38,20 +39,24 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  };
  let core,publish;
  const engine={command(type,track,value){
-  if(type==='record'&&!core.tracks[track].data)core.command({type:'prepare',track,data:new Float32Array(core.capacity)});
+  if((type==='record'||type==='trigger')&&!core.tracks[track].data)core.command({type:'prepare',track,data:new Float32Array(core.capacity)});
   core.command({type,track,value});publish();
  }};
  const FakeLooper={async create(ctx,src,dest,onState){
   core=new LoopCore(1000);publish=()=>{engine.state=core.state();onState(engine.state);};return engine;
  }};
  class AudioContext{constructor(){this.state='running';this.sampleRate=1000;}async resume(){}}
- class Synth{constructor(){this.input={};this.compressor={};}volume(){}panic(){}}
+ class Synth{constructor(){this.input={};this.compressor={};}volume(){}panic(){}noteOff(){}}
+ const holds=new Map();let timerId=0;
+ class TestTrackButtons extends TrackButtons{
+  constructor(dispatch,options){super(dispatch,{...options,schedule:fn=>{const id=++timerId;holds.set(id,fn);return id;},cancel:id=>holds.delete(id)});}
+ }
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
   navigator:{},localStorage:{getItem(){return null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout,clearTimeout,performance,
-  AudioContext,Synth,PRESETS,Looper:FakeLooper,decode:()=>null,matches:()=>false,learnMapping:()=>null};
+  AudioContext,Synth,PRESETS,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
  assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,12,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
@@ -80,4 +85,23 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  await click('record',0);
  assert.equal(ids.get('tempo').disabled,false);
  await click('clear',3);assert.equal(core.tracks[3].hasAudio,false);
+ const midi=value=>globals.process({data:[0xb0,20,value]},'keyboard');
+ const flush=()=>new Promise(setImmediate);
+ buttons.find(b=>b.dataset.learn==='track3').onclick();
+ midi(1);midi(0);await flush();
+ assert.equal(core.active,-1,'learning consumes press and release');
+ midi(1);await flush();assert.equal(core.active,3,'CC 1 starts an empty track');
+ midi(1);await flush();assert.equal(core.active,3,'duplicate CC does not close it');
+ midi(0);core.process(new Float32Array(100).fill(.2),new Float32Array(100));publish();
+ midi(127);await flush();assert.equal(core.active,-1,'next press closes the take');midi(0);
+ midi(1);await flush();assert.equal(core.tracks[3].muted,true);midi(0);
+ midi(1);await flush();assert.equal(core.tracks[3].muted,false);midi(0);
+ midi(1);await flush();
+ for(const fn of [...holds.values()])fn();holds.clear();await flush();
+ assert.equal(core.tracks[3].hasAudio,false,'holding clears the mapped track');
+ midi(0);await flush();assert.equal(core.active,-1,'release after clear cannot restart recording');
+ await ids.get('metronome').onclick();
+ assert.equal(core.metronome,true);assert.equal(ids.get('metronome').attrs['aria-pressed'],'true');
+ await ids.get('metronome').onclick();assert.equal(core.metronome,false);
+
 });
