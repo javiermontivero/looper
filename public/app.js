@@ -1,5 +1,6 @@
 import {PRESETS,Synth} from './synth.js';
 import {decode,matches,learnMapping} from './midi.js';
+import {Looper} from './looper.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -47,10 +48,10 @@ function setLearning(action){learning=learning===action?null:action;$('#learn-st
 function process(event,device){
  const e=decode(event.data);if(!e)return;const channel=device+':'+e.channel,key=channel+':'+e.number;
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,e.value>=64);save('looper:mappings',mappings);setLearning(null);off(key);return;}}
- for(const action of ['volume','previous','next']){if(!matches(mappings[action],e,device))continue;
+ for(const action of ['volume','previous','next','track0','track1','track2','track3','track4']){if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=e.type==='on'||(e.type==='cc'&&e.value>=64);
-  if(down&&!latches.get(action)){const i=PRESETS.indexOf(preset);setPreset(PRESETS[(i+(action==='next'?1:-1)+PRESETS.length)%PRESETS.length]);}
+  if(down&&!latches.get(action)){if(action.startsWith('track'))loopCommand('mute',Number(action.slice(5)));else{const i=PRESETS.indexOf(preset);setPreset(PRESETS[(i+(action==='next'?1:-1)+PRESETS.length)%PRESETS.length]);}}
   latches.set(action,down);return;
  }
  if(e.type==='on')on(key,e.number,e.value,channel);
@@ -83,7 +84,7 @@ $('#power').onclick=async()=>{await activate();await connect();};
 $('#connect').onclick=async()=>{await activate();await connect();};
 $('#midi-input').onchange=e=>{panic();selected=e.target.value;refreshInputs();};
 $('#volume').oninput=e=>setVolume(Number(e.target.value));
-$('#panic').onclick=panic;
+$('#panic').onclick=silenceAll;
 for(const b of $$('[data-filter]'))b.onclick=()=>{filter=b.dataset.filter;for(const t of $$('[data-filter]'))t.classList.toggle('active',t===b);renderPresets();};
 for(const b of $$('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
 $('#clear-mappings').onclick=()=>{mappings={};save('looper:mappings',mappings);latches.clear();learning=null;renderMappings();$('#learn-status').textContent='Asignaciones borradas.';};
@@ -91,14 +92,60 @@ $('#octave-down').onclick=()=>{panic();octave=Math.max(0,octave-1);renderKeyboar
 $('#octave-up').onclick=()=>{panic();octave=Math.min(7,octave+1);renderKeyboard();};
 const keys=['KeyA','KeyW','KeyS','KeyE','KeyD','KeyF','KeyT','KeyG','KeyY','KeyH','KeyU','KeyJ','KeyK','KeyO','KeyL','KeyP','Semicolon'];
 window.addEventListener('keydown',async e=>{
- if(e.code==='Escape'){panic();if(learning)setLearning(learning);return;}
+ if(e.code==='Escape'){silenceAll();if(learning)setLearning(learning);return;}
  if(e.ctrlKey||e.metaKey||e.altKey||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
  const index=keys.indexOf(e.code);if(index<0||e.repeat)return;e.preventDefault();computer.add(e.code);
  if(await activate())if(computer.has(e.code))on('computer:'+e.code,(octave+1)*12+index);
 });
 window.addEventListener('keyup',e=>{computer.delete(e.code);off('computer:'+e.code);});
-window.addEventListener('blur',panic);document.addEventListener('visibilitychange',()=>{if(document.hidden)panic();});
+window.addEventListener('blur',silenceAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)silenceAll();});
+let looper,looperStarting,loopBusy=false,lastLoopMessage=-1;
+async function ensureLooper(){
+ if(!(await activate()))throw new Error('Activá el audio para grabar.');
+ if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
+ if(looper)return looper;
+ if(!looperStarting)looperStarting=Looper.create(context,synth.input,synth.compressor,renderLoop,notice)
+   .then(value=>{looper=value;return value;}).finally(()=>{looperStarting=null;});
+ return looperStarting;
+}
+async function loopCommand(type,track){
+ try{
+  if(type==='record'){
+   if(loopBusy)return;loopBusy=true;
+   try{const engine=await ensureLooper();if(!document.hidden)engine.command(type,track);}finally{loopBusy=false;}
+  }else if(looper){if(type==='resume'&&!(await activate()))return;looper.command(type,track);}
+ }catch(e){notice('Looper: '+errorText(e));}
+}
+function silenceAll(){panic();if(looper)loopCommand('pause');}
+function renderLoop(state){
+ const active=state.active>=0;
+ $('#loop-clock').textContent=state.length?state.seconds.toFixed(2)+' s por vuelta':active?state.elapsed.toFixed(1)+' s / 60 s':'Primer loop: duración libre';
+ $('#loop-progress').value=state.length?state.position/state.length:0;
+ $('#loop-transport').disabled=!state.length&&!active;
+ $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
+ $('#loop-reset').disabled=!state.length&&!active;
+ for(let i=0;i<5;i++){
+  const t=state.tracks[i],row=$('#track-'+i),record=row.querySelector('[data-loop-action="record"]'),mute=row.querySelector('[data-loop-action="mute"]'),clear=row.querySelector('[data-loop-action="clear"]');
+  row.classList.toggle('recording',state.active===i);row.classList.toggle('muted',t.muted);
+  row.querySelector('.track-state').textContent=state.active===i?(t.mode==='overdub'?'Sumando audio':'Grabando'):(t.hasAudio?(state.paused?'Pausada':t.muted?'Apagada':'Reproduciendo'):'Vacía');
+  record.textContent=state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
+  record.setAttribute('aria-pressed',String(state.active===i));
+  mute.textContent=t.muted?'Encender':'Apagar';mute.disabled=!t.hasAudio;mute.setAttribute('aria-pressed',String(!t.muted&&t.hasAudio));
+  clear.disabled=!t.hasAudio&&state.active!==i;
+ }
+ if(state.message&&state.revision!==lastLoopMessage){$('#loop-status').textContent=state.message;lastLoopMessage=state.revision;}
+ else if(!state.message)$('#loop-status').textContent=active?(state.length?'Lo que tocás se suma solo a esta pista.':'Tocá tu frase y pulsá Cerrar para empezar a repetirla.'):state.paused?'Pausado. Reanudá para seguir desde esta posición.':'Elegí una pista para grabar. Cada pista nueva cierra automáticamente después de una vuelta.';
+}
+for(const b of $('[data-loop-action]'))b.onclick=()=>{
+ const type=b.dataset.loopAction,track=Number(b.dataset.track);
+ if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
+ loopCommand(type,track);
+};
+$('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar las cinco pistas y empezar una sesión nueva?'))loopCommand('reset');};
+window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 setPreset(preset);setVolume(volume);renderKeyboard();renderMappings();
+renderLoop({length:0,position:0,seconds:0,elapsed:0,active:-1,paused:false,revision:0,message:'',tracks:Array.from({length:5},()=>({hasAudio:false,muted:false,mode:'empty'}))});
 if(!window.isSecureContext)notice('El audio funciona aquí. Para usar tu teclado MIDI necesitás HTTPS confiable; el servidor tiene disponible setup-https.sh para configurar nginx.');
 if(window.isSecureContext&&navigator.permissions){navigator.permissions.query({name:'midi',sysex:false}).then(p=>{if(p.state==='granted')connect();}).catch(()=>{});}
 

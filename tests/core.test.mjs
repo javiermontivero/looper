@@ -54,5 +54,6 @@ test('HTTP serves health and prefixed assets; refuses paths outside allowlist',a
   assert.match(js.headers.get('permissions-policy'),/midi/);
   assert.equal((await fetch(base+'/server.mjs')).status,404);
   assert.equal((await fetch(base+'/looper/setup-https.sh')).status,200);
+  for(const asset of ['looper.js','loop-core.js','loop-worklet.js','loops.css'])assert.equal((await fetch(base+'/looper/'+asset)).status,200,asset);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });

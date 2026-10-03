@@ -14,7 +14,7 @@ export const PRESETS=[
 ];
 export const frequency=note=>440*2**((note-69)/12);
 export class Synth {
- constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createDynamicsCompressor();Object.assign(this.compressor.threshold,{value:-12});this.compressor.ratio.value=16;this.compressor.knee.value=8;this.compressor.attack.value=.003;this.compressor.release.value=.15;this.compressor.connect(this.master);this.master.connect(context.destination);}
+ constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.input=context.createGain();this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createDynamicsCompressor();Object.assign(this.compressor.threshold,{value:-12});this.compressor.ratio.value=16;this.compressor.knee.value=8;this.compressor.attack.value=.003;this.compressor.release.value=.15;this.input.connect(this.compressor);this.compressor.connect(this.master);this.master.connect(context.destination);}
  volume(value){this.master.gain.setTargetAtTime(Math.max(0,Math.min(1,value)),this.context.currentTime,.015);}
  noteOn(key,note,velocity=100,channel='local'){
   this.stop(key,true);if(this.voices.size>=this.maxVoices)this.stop(this.voices.keys().next().value,true);
@@ -25,7 +25,7 @@ export class Synth {
   depth.gain.setValueAtTime(hz*p.index*(.35+.65*v),t);depth.gain.exponentialRampToValueAtTime(Math.max(.1,hz*p.index*.14),t+p.attack+p.decay);
   filter.type='lowpass';filter.frequency.value=Math.min(c.sampleRate*.45,p.tone*(.5+.5*v));filter.Q.value=.5;
   const peak=.18*v; amp.gain.setValueAtTime(0,t);amp.gain.linearRampToValueAtTime(peak,t+p.attack);amp.gain.exponentialRampToValueAtTime(Math.max(.0001,peak*p.sustain),t+p.attack+p.decay);
-  mod.connect(depth);depth.connect(carrier.frequency);carrier.connect(filter);filter.connect(amp);amp.connect(this.compressor);mod.start(t);carrier.start(t);
+  mod.connect(depth);depth.connect(carrier.frequency);carrier.connect(filter);filter.connect(amp);amp.connect(this.input);mod.start(t);carrier.start(t);
   const voice={carrier,mod,depth,amp,filter,channel,note,release:p.release,held:true,released:false};
   carrier.onended=()=>{for(const n of [carrier,mod,depth,amp,filter])n.disconnect();if(this.voices.get(key)===voice)this.voices.delete(key);};
   this.voices.set(key,voice);
