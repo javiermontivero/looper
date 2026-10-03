@@ -1,6 +1,6 @@
-# Looper 0.2 — preparado, NO desplegado
+# Looper 0.2
 
-La versión publicada sigue siendo 0.1. Esta rama `feature/audio-looper` incorpora grabación y debe desplegarse solo cuando el usuario lo solicite. No ejecutar `project_up`, restart ni sincronización de nginx durante esta preparación.
+Versión 0.2 desplegada con autorización del usuario. Incluye cinco pistas de grabación y overdub.
 
 ## Instrumento
 12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI, táctil y de computadora. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
@@ -26,7 +26,7 @@ JavaScript ES modules y Web Audio sin dependencias de terceros. Node sirve archi
 `node --test`: incluye regresiones de MIDI, síntesis, servidor y reloj de muestras del looper.
 `python3 tests/validate_static.py`: comprobaciones offline de módulos publicados y controles.
 
-En esta preparación el sandbox de Lab no tiene Node ni otro motor JavaScript instalado. La suite Node queda pendiente de ejecución; no usar `project_up` solo para correrla porque también despliega. El administrador puede provisionar Node en el entorno de pruebas. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
+Las 17 pruebas Node pasaron durante la construcción de la imagen desplegada. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
 
-## Despliegue (solo con autorización posterior)
+## Despliegue
 Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen anterior y no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
