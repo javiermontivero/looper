@@ -10,10 +10,10 @@ export class LoopCore {
     this.captured=0;
     this.paused=false;
     this.revision=0;
-    this.message='';
+    this.message='';this.renderTracks=[];this.edge=0;
     this.tracks=Array.from({length:5},()=>({data:null,hasAudio:false,muted:false,gain:1,mode:'empty'}));
   }
-  touch(message='') { this.revision++; this.message=message; }
+  touch(message='') { this.revision++; this.message=message; this.renderTracks=this.tracks.filter(t=>t.hasAudio||t.mode==='recording'||t.mode==='overdub'); this.edge=Math.min(Math.ceil(this.rate*.002),Math.floor(this.length/4)); }
   command(c) {
     if(!c||typeof c.type!=='string')return;
     if(c.type==='pause') {
@@ -65,6 +65,7 @@ export class LoopCore {
     t.hasAudio=true;t.mode='playing';this.active=-1;this.captured=0;this.touch();
   }
   process(input,output) {
+    if(this.paused||(!this.length&&this.active<0)){output.fill(0);return;}
     const ramp=1/Math.max(1,this.rate*.005);
     for(let frame=0;frame<output.length;frame++){
       output[frame]=0;
@@ -79,14 +80,15 @@ export class LoopCore {
       }
       const position=this.position;
       // Tiny boundary fades keep discontinuities from clicking; never alter captured audio.
-      const edge=Math.min(Math.ceil(this.rate*.002),Math.floor(this.length/4));
-      const envelope=edge?Math.min(1,position/edge,(this.length-1-position)/edge):1;
+      const edge=this.edge;
+      const envelope=position<edge?position/edge:position>=this.length-edge?(this.length-1-position)/edge:1;
       let mixed=0;
-      for(let i=0;i<this.tracks.length;i++){
-        const t=this.tracks[i],target=t.muted?0:1;
-        t.gain+=Math.max(-ramp,Math.min(ramp,target-t.gain));
+      const recording=this.active>=0?this.tracks[this.active]:null;
+      for(const t of this.renderTracks){
+        const target=t.muted?0:1;
+        if(t.gain!==target)t.gain+=Math.max(-ramp,Math.min(ramp,target-t.gain));
         if(t.hasAudio)mixed+=t.data[position]*t.gain*envelope;
-        if(i===this.active){
+        if(t===recording){
           t.data[position]=Math.max(-8,Math.min(8,t.data[position]+sample));
         }
       }

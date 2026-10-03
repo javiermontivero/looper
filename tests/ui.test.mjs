@@ -48,6 +48,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  class Synth{constructor(){this.input={};this.compressor={};}volume(){}panic(){}}
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
   navigator:{},localStorage:{getItem(){return null;},setItem(){}},
+  requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   AudioContext,Synth,PRESETS,Looper:FakeLooper,decode:()=>null,matches:()=>false,learnMapping:()=>null};
  vm.runInNewContext(source,globals);

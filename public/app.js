@@ -12,6 +12,7 @@ const pressed=new Map(),latches=new Map(),pointers=new Map(),computer=new Set();
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
 async function activate(){
+ if(context?.state==='running')return true;
  if(starting)return starting;
  starting=(async()=>{try{
   if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context);synth.preset=preset;synth.volume(volume/100);context.onstatechange=()=>{$('#audio-status').textContent=context.state==='running'?'Audio activo':'Audio suspendido';$('#power').textContent=context.state==='running'?'Audio activo':'Reactivar audio';};}
@@ -28,7 +29,15 @@ function renderPresets(){
  const n=document.createElement('span');n.className='number';n.textContent=String(PRESETS.indexOf(p)+1).padStart(2,'0');b.append(cat,title,n);b.onclick=()=>setPreset(p);$('#presets').append(b);}
 }
 function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);save('looper:volume',volume);}
-function paint(){for(const k of $$('.key'))k.classList.toggle('playing',[...pressed.values()].includes(Number(k.dataset.note)));}
+let keyElements=[],paintPending=false;
+function paint(){
+ if(paintPending)return;
+ paintPending=true;
+ requestAnimationFrame(()=>{
+  paintPending=false;const notes=new Set(pressed.values());
+  for(const k of keyElements){const playing=notes.has(Number(k.dataset.note));if(k._playing!==playing){k._playing=playing;k.classList.toggle('playing',playing);}}
+ });
+}
 function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;pressed.set(key,note);synth.noteOn(key,note,velocity,channel);$('#last-note').textContent=noteName(note)+' · Intensidad '+velocity;paint();}
 function off(key){synth?.noteOff(key);pressed.delete(key);paint();}
 function panic(){synth?.panic();pressed.clear();computer.clear();pointers.clear();latches.clear();paint();}
@@ -38,10 +47,10 @@ function renderKeyboard(){
  for(let i=0;i<total;i++){const note=base+i,black=[1,3,6,8,10].includes(note%12),b=document.createElement('button');b.className='key'+(black?' black':'');b.dataset.note=note;b.setAttribute('aria-label',noteName(note));b.tabIndex=-1;
  if(black){b.style.left=(whites/whiteCount*100-(compact?3.8:2.15))+'%';b.style.width=(compact?7.6:4.3)+'%';}else whites++;
  if(note%12===0)b.textContent='C'+(Math.floor(note/12)-1);
- b.onpointerdown=async e=>{e.preventDefault();b.setPointerCapture(e.pointerId);const key='pointer:'+e.pointerId;pointers.set(e.pointerId,key);if(await activate())if(pointers.get(e.pointerId)===key)on(key,note);};
+ b.onpointerdown=async e=>{e.preventDefault();b.setPointerCapture(e.pointerId);const key='pointer:'+e.pointerId;pointers.set(e.pointerId,key);if(context?.state==='running')on(key,note);else if(await activate())if(pointers.get(e.pointerId)===key)on(key,note);};
  const end=e=>{const key=pointers.get(e.pointerId);if(key)off(key);pointers.delete(e.pointerId);};
  b.onpointerup=end;b.onpointercancel=end;b.onlostpointercapture=end;$('#keyboard').append(b);}
- $('#octave-value').textContent=octave;paint();
+ keyElements=$$('.key');$('#octave-value').textContent=octave;paint();
 }
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
 function setLearning(action){learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
@@ -95,11 +104,12 @@ window.addEventListener('keydown',async e=>{
  if(e.code==='Escape'){silenceAll();if(learning)setLearning(learning);return;}
  if(e.ctrlKey||e.metaKey||e.altKey||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
  const index=keys.indexOf(e.code);if(index<0||e.repeat)return;e.preventDefault();computer.add(e.code);
- if(await activate())if(computer.has(e.code))on('computer:'+e.code,(octave+1)*12+index);
+ if(context?.state==='running')on('computer:'+e.code,(octave+1)*12+index);else if(await activate())if(computer.has(e.code))on('computer:'+e.code,(octave+1)*12+index);
 });
 window.addEventListener('keyup',e=>{computer.delete(e.code);off('computer:'+e.code);});
 window.addEventListener('blur',silenceAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)silenceAll();});
-let looper,looperStarting,loopBusy=false,lastLoopMessage=-1;
+let looper,looperStarting,loopBusy=false,lastLoopMessage=-1,lastLoopRevision=-1,lastClockText='';
+const loopClock=$('#loop-clock'),loopProgress=$('#loop-progress');
 async function ensureLooper(){
  if(!(await activate()))throw new Error('Activá el audio para grabar.');
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
@@ -119,8 +129,11 @@ async function loopCommand(type,track){
 function silenceAll(){panic();if(looper)loopCommand('pause');}
 function renderLoop(state){
  const active=state.active>=0;
- $('#loop-clock').textContent=state.length?state.seconds.toFixed(2)+' s por vuelta':active?state.elapsed.toFixed(1)+' s / 60 s':'Primer loop: duración libre';
- $('#loop-progress').value=state.length?state.position/state.length:0;
+ const clockText=state.length?state.seconds.toFixed(2)+' s por vuelta':active?state.elapsed.toFixed(1)+' s / 60 s':'Primer loop: duración libre';
+ if(clockText!==lastClockText){loopClock.textContent=clockText;lastClockText=clockText;}
+ loopProgress.value=state.length?state.position/state.length:0;
+ if(state.revision===lastLoopRevision)return;
+ lastLoopRevision=state.revision;
  $('#loop-transport').disabled=!state.length&&!active;
  $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
  $('#loop-reset').disabled=!state.length&&!active;
