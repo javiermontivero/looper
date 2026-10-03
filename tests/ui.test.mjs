@@ -50,6 +50,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   navigator:{},localStorage:{getItem(){return null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
+  setTimeout,clearTimeout,performance,
   AudioContext,Synth,PRESETS,Looper:FakeLooper,decode:()=>null,matches:()=>false,learnMapping:()=>null};
  vm.runInNewContext(source,globals);
  assert.equal(ids.get('presets').children.length,12,'startup must finish rendering presets');
