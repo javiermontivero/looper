@@ -3,7 +3,9 @@
 Versión 0.2 desplegada con autorización del usuario. Incluye cinco pistas de grabación y overdub.
 
 ## Instrumento
-Seis instrumentos smplr 1.1.0: piano acústico, Wurlitzer, bajo acústico, guitarra nylon, cuerdas y marimba. Se descarga solo el instrumento elegido, con indicador de carga; cambiarlo libera el anterior y conserva los loops de audio. Requiere Internet para descargar la biblioteca y las muestras desde jsDelivr, smpldsnds.github.io y gleitz.github.io. Créditos y licencias en public/sounds.html. Las notas tocadas durante la carga se descartan. Hasta 24 notas sostenidas de samples; pitch bend aplicado a notas nuevas (no a notas ya sonando).
+Siete instrumentos smplr 1.1.0: piano acústico, Wurlitzer, bajo acústico, guitarra nylon, cuerdas, marimba y batería acústica Hydrogen. Se descarga solo el instrumento elegido, con indicador de carga; cambiarlo libera el anterior y conserva los loops de audio. Requiere Internet para descargar la biblioteca y las muestras desde jsDelivr, smpldsnds.github.io y gleitz.github.io. Créditos y licencias en public/sounds.html. Las notas tocadas durante la carga se descartan. Hasta 24 notas sostenidas de samples; pitch bend aplicado a notas nuevas (no a notas ya sonando).
+
+Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
 Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y cinco pistas. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
 

@@ -5,10 +5,27 @@ export const SAMPLES=[
  {id:'bass',name:'Bajo acústico',category:'Instrumentos',engine:'soundfont',instrument:'acoustic_bass'},
  {id:'guitar',name:'Guitarra nylon',category:'Instrumentos',engine:'soundfont',instrument:'acoustic_guitar_nylon'},
  {id:'strings',name:'Cuerdas',category:'Instrumentos',engine:'soundfont',instrument:'string_ensemble_1'},
+ {id:'drums',name:'Batería acústica',category:'Instrumentos',engine:'drums'},
  {id:'marimba',name:'Marimba / percusión',category:'Instrumentos',engine:'soundfont',instrument:'marimba'}
 ];
 export const PRESETS=[...SAMPLES,...FM_PRESETS.map(p=>({...p,category:'Sinte FM'}))];
 const importSmplr=()=>import('https://cdn.jsdelivr.net/npm/smplr@1.1.0/dist/index.mjs');
+
+const DRUM_BASE='https://smpldsnds.github.io/hydrogen-drum-samples/';
+export const DRUM_NOTES={
+ 35:'kick',36:'kick',37:'stick',38:'snare',39:'clap',40:'rim',
+ 41:'floor',42:'closed',43:'floor',44:'pedal',45:'mid',46:'open',
+ 47:'mid',48:'high',49:'crash',50:'high',51:'ride',53:'bell',55:'splash',56:'cowbell',57:'crash',59:'ride'
+};
+const DRUM_FILES={
+ kick:'h2ogmbd/Kick-Hard',stick:'h2ogmsn/SideStick-Hard',snare:'h2ogmsn/Snare-Hard',
+ clap:'h2ogmcp/HandClap',rim:'h2ogmsn/SnareRimshot-Hard',
+ floor:'h2ogmft/TomFloor-Hard',mid:'h2ogmmt/Tom2-Hard',high:'h2ogmht/Tom1-Hard',
+ closed:'h2ogmhh/HatClosed-Hard',pedal:'h2ogmhh/HatPedal-Hard',open:'h2ogmhh/HatOpen-Hard',
+ crash:'h2ogmcy/Crash-Hard',ride:'h2ogmcy/Ride-Hard',bell:'h2ogmcy/Bell-Hard',
+ splash:'h2ogmcy/Splash-Hard',cowbell:'h2ogmcb/Cowbell-Hard'
+};
+export function drumForNote(note){return DRUM_NOTES[note>=60&&note<=83?note-24:note];}
 
 // Stable input bus: both engines feed the exact same live monitor and loop capture.
 export class Synth extends FMSynth{
@@ -40,6 +57,9 @@ export class Synth extends FMSynth{
      instrument=lib.SplendidGrandPiano(this.context,{...options,
       notesToLoad:{notes:Array.from({length:21},(_,i)=>36+i*3),fallback:'nearest'}});
     }else if(p.engine==='electric')instrument=lib.ElectricPiano(this.context,{...options,instrument:p.instrument});
+    else if(p.engine==='drums')instrument=lib.Sampler(this.context,{...options,
+     preset:{samples:{baseUrl:DRUM_BASE,formats:['ogg','m4a'],map:DRUM_FILES},defaults:{loop:false,ampRelease:0.02},
+      groups:[{regions:Object.entries(DRUM_NOTES).map(([key,sample])=>({sample,keyRange:[Number(key),Number(key)],pitch:Number(key)}))}]}});
     else instrument=lib.Soundfont(this.context,{...options,instrument:p.instrument,kit:'FluidR3_GM'});
     this.sampler=instrument;
     await instrument.ready;
@@ -56,12 +76,21 @@ export class Synth extends FMSynth{
  noteOn(key,note,velocity=100,channel='local'){
   if(!this.ready)return; // Never queue notes to sound unexpectedly after a download.
   if(!this.preset.engine)return super.noteOn(key,note,velocity,channel);
+  const drum=this.preset.engine==='drums'?drumForNote(note):null;
+  if(this.preset.engine==='drums'){
+   if(!drum)return;
+   if(['closed','pedal','open'].includes(drum)){
+    for(const [oldKey,v] of this.sampleVoices)if(v.channel===channel&&['closed','pedal','open'].includes(v.drum))this.stopSample(oldKey);
+   }
+   // Each drum hit owns a voice; releasing/retriggering the pad preserves its tail.
+   key='drum:'+ ++this.serial;note=note>=60&&note<=83?note-24:note;
+  }
   this.stopSample(key);
   if(this.sampleVoices.size>=24)this.stopSample(this.sampleVoices.keys().next().value);
-  const voice={channel,held:true,stop:()=>{},id:++this.serial};
+  const voice={channel,drum,held:true,stop:()=>{},id:++this.serial};
   this.sampleVoices.set(key,voice);
   voice.stop=this.sampler.start({note,velocity,time:this.context.currentTime,stopId:voice.id,
-   detune:this.sampleBends.get(channel)||0,
+   detune:drum?0:this.sampleBends.get(channel)||0,
    onEnded:()=>{if(this.sampleVoices.get(key)===voice)this.sampleVoices.delete(key);}});
  }
  stopSample(key){
@@ -76,7 +105,7 @@ export class Synth extends FMSynth{
  pedal(channel,down){
   super.pedal(channel,down);
   if(down)this.sampleSustain.add(channel);
-  else{this.sampleSustain.delete(channel);for(const [key,v] of this.sampleVoices)if(v.channel===channel&&!v.held)this.stopSample(key);}
+  else{this.sampleSustain.delete(channel);for(const [key,v] of this.sampleVoices)if(v.channel===channel&&!v.held&&!v.drum)this.stopSample(key);}
  }
  bend(channel,value){
   super.bend(channel,value);

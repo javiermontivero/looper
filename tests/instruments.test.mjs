@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Synth,PRESETS,SAMPLES} from '../public/instruments.js';
+import {Synth,PRESETS,SAMPLES,drumForNote} from '../public/instruments.js';
 class Param{setTargetAtTime(){} }
 class Node{constructor(){this.gain=new Param();this.threshold={};this.ratio={};this.knee={};this.attack={};this.release={};}connect(n){this.destination=n;}disconnect(){}}
 function setup(){
@@ -11,7 +11,7 @@ function setup(){
    start(event){this.events.push(event);return ()=>{this.stops++;};},stop(){this.stops++;},dispose(){this.disposed=true;},resolve:()=>resolve(),reject:()=>reject(Error('network'))};
   instances.push(instance);return instance;
  }
- const synth=new Synth(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory}),onStatus:s=>statuses.push(s)});
+ const synth=new Synth(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory,Sampler:factory}),onStatus:s=>statuses.push(s)});
  return {synth,instances,statuses,context};
 }
 const flush=()=>new Promise(setImmediate);
@@ -47,5 +47,23 @@ test('sample polyphony stays bounded and stale ended callbacks cannot remove ret
  synth.noteOn('x',60);const old=instances[0].events[0];synth.noteOn('x',62);old.onEnded();
  assert.equal(synth.sampleVoices.size,1);
  for(let i=0;i<40;i++)synth.noteOn('key'+i,i+30);assert.equal(synth.sampleVoices.size,24);
+ synth.panic();assert.equal(synth.sampleVoices.size,0);
+});
+
+test('acoustic drum notes, central octave, tails, hi-hat choke and panic',async()=>{
+ const {synth,instances}=setup();const p=synth.selectPreset(SAMPLES.find(p=>p.id==='drums'));
+ await flush();const inst=instances[0];inst.resolve();await p;
+ assert.equal(Object.keys(inst.options.preset.samples.map).length,16);
+ assert.equal(drumForNote(36),'kick');assert.equal(drumForNote(60),'kick');
+ assert.equal(drumForNote(62),'snare');assert.equal(drumForNote(66),'closed');
+ synth.noteOn('pad',36,70,'usb');synth.noteOff('pad');
+ assert.equal(inst.stops,0,'release must not truncate drum tail');
+ synth.noteOn('pad',36,95,'usb');assert.equal(synth.sampleVoices.size,2,'repeated hits overlap');
+ synth.bend('usb',16383);synth.noteOn('hat',46,100,'usb');
+ synth.noteOn('closed',42,100,'usb');assert.equal(inst.stops,1,'closed hat chokes open hat');
+ assert.equal(inst.events.at(-1).detune,0);assert.equal(inst.events.at(-1).note,42);
+ const count=inst.events.length;synth.noteOn('unmapped',100);assert.equal(inst.events.length,count);
+ synth.pedal('usb',true);synth.pedal('usb',false);assert.equal(inst.stops,1);
+ inst.events[0].onEnded();assert.equal(synth.sampleVoices.size,2);
  synth.panic();assert.equal(synth.sampleVoices.size,0);
 });

@@ -58,7 +58,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   setTimeout,clearTimeout,performance,
   AudioContext,Synth,PRESETS,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
- assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,18,'dropdown must contain every preset');
+ assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,19,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const click=async(type,track)=>{actions.find(b=>b.dataset.loopAction===type&&b.dataset.track===String(track)).onclick();await new Promise(setImmediate);};
  await click('record',0);
