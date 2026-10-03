@@ -1,3 +1,4 @@
+import {playableVelocity} from '../public/synth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Synth,PRESETS,SAMPLES,drumForNote} from '../public/instruments.js';
@@ -20,7 +21,7 @@ test('sample engine routes into capture bus and plays immediate velocity-sensiti
  const inst=instances[0];assert.equal(inst.options.destination,synth.input);
  synth.noteOn('early',60);assert.equal(inst.events.length,0,'no deferred notes during load');
  inst.resolve();await loading;synth.noteOn('a',60,75,'usb:0');
- assert.equal(inst.events[0].time,context.currentTime);assert.equal(inst.events[0].velocity,75);
+ assert.equal(inst.events[0].time,context.currentTime);assert.equal(inst.events[0].velocity,playableVelocity(75));
  synth.noteOff('a');assert.equal(inst.stops,1);assert.equal(synth.sampleVoices.size,0);
 });
 test('sustain and channel-off release samples without affecting other channels',async()=>{
@@ -66,4 +67,12 @@ test('acoustic drum notes, central octave, tails, hi-hat choke and panic',async(
  synth.pedal('usb',true);synth.pedal('usb',false);assert.equal(inst.stops,1);
  inst.events[0].onEnded();assert.equal(synth.sampleVoices.size,2);
  synth.panic();assert.equal(synth.sampleVoices.size,0);
+});
+
+test('soft sample strikes are lifted once and zero velocity never creates a voice',async()=>{
+ const {synth,instances}=setup();const p=synth.selectPreset(SAMPLES[0]);await flush();instances[0].resolve();await p;
+ synth.noteOn('soft',60,1);synth.noteOn('medium',60,64);synth.noteOn('strong',60,127);
+ const velocities=instances[0].events.map(e=>e.velocity);
+ assert.equal(velocities[0],36);assert.equal(velocities[1],playableVelocity(64));assert.equal(velocities[2],127);
+ synth.noteOn('soft',60,0);assert.equal(instances[0].events.length,3);assert.equal(synth.sampleVoices.has('soft'),false);
 });

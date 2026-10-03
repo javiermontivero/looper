@@ -43,3 +43,6 @@ AudioContext solicita interactive. Las notas se disparan inmediatamente con nodo
 Se reemplazó DynamicsCompressorNode (look-ahead de aproximadamente 6 ms) por una curva estática sin oversampling, transparente hasta amplitud 0,8 y con saturación suave encima. No elimina los buffers de salida del navegador/Android.
 Ajustes → Rendimiento permite comparar el instrumento con un clic directo por MIDI y con un botón táctil (pointerdown, no espera a soltar). El clic va solo al monitor y no se graba. El modo de prueba no persiste al recargar.
 Mide las últimas 128 entregas MIDI y preparaciones de notas (mediana/p95/máximo), bloqueos del hilo principal y latencias base/salida informadas. Estadísticas solo se ordenan/renderizan al pedir Actualizar. No mide el tiempo físico del USB, ataque acústico, tecla→parlante ni garantiza que Android informe toda la demora.
+
+## Respuesta de intensidad
+Notas MIDI positivas usan la curva 36 + 91 × ((v−1)/126)^0,65, aplicada una sola vez por motor. Levanta los toques suaves sin aumentar el máximo 127; velocity 0 sigue siendo Note Off. También cambia la selección de capas de samples en instrumentos que las tienen. Afecta notas nuevas y su captura, no modifica loops ya grabados. No agrega buffers ni espera. El clic de diagnóstico conserva su intensidad fija.

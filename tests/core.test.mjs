@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import vm from 'node:vm';
 import {decode,matches,learnMapping} from '../public/midi.js';
-import {Synth,PRESETS,frequency} from '../public/synth.js';
+import {Synth,PRESETS,frequency,playableVelocity} from '../public/synth.js';
 import {handler} from '../server.mjs';
 test('MIDI zero velocity, channels, malformed packets and pitch bend',()=>{
  assert.deepEqual(decode([0x92,60,0]),{type:'off',channel:2,number:60,value:0});
@@ -68,4 +68,13 @@ test('monitor uses a memoryless safety stage and diagnostic click bypasses captu
  s.testClick();const osc=oscillators[0],amp=gains.at(-1);
  assert.equal(amp.destination,s.master);assert.notEqual(amp.destination,s.input);
  assert.ok(osc.stopped<=c.currentTime+.041);osc.onended();assert.equal(amp.disconnected,true);
+});
+
+test('velocity curve preserves ordering, raises quiet strikes and keeps release and peak unchanged',()=>{
+ assert.equal(playableVelocity(0),0);assert.equal(playableVelocity(NaN),0);assert.equal(playableVelocity(-1),0);
+ assert.equal(playableVelocity(1),36);assert.equal(playableVelocity(127),127);assert.equal(playableVelocity(200),127);
+ for(let v=2;v<=127;v++){assert.ok(playableVelocity(v)>playableVelocity(v-1));assert.ok(playableVelocity(v)>=v);}
+ const synth=new Synth(context());synth.noteOn('soft',60,1);
+ assert.ok(Math.abs(synth.voices.get('soft').amp.gain.value-.18*(36/127)*PRESETS[0].sustain)<1e-9);
+ synth.noteOn('soft',60,0);assert.equal(synth.voices.get('soft').released,true);
 });

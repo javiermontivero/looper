@@ -1,4 +1,4 @@
-import {PRESETS as FM_PRESETS,Synth as FMSynth} from './synth.js';
+import {PRESETS as FM_PRESETS,Synth as FMSynth,playableVelocity} from './synth.js';
 export const SAMPLES=[
  {id:'piano',name:'Piano acústico',category:'Instrumentos',engine:'piano'},
  {id:'wurlitzer',name:'Wurlitzer',category:'Instrumentos',engine:'electric',instrument:'WurlitzerEP200'},
@@ -76,6 +76,7 @@ export class Synth extends FMSynth{
  noteOn(key,note,velocity=100,channel='local'){
   if(!this.ready)return; // Never queue notes to sound unexpectedly after a download.
   if(!this.preset.engine)return super.noteOn(key,note,velocity,channel);
+  velocity=playableVelocity(velocity);if(!velocity){this.noteOff(key);return;}
   const drum=this.preset.engine==='drums'?drumForNote(note):null;
   if(this.preset.engine==='drums'){
    if(!drum)return;

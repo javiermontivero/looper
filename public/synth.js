@@ -13,6 +13,12 @@ export const PRESETS=[
 {id:'arcade',name:'Arcade',category:'Leads',description:'Un timbre brillante y juguetón, con bordes digitales.',ratio:4,index:1.5,attack:.004,decay:.2,sustain:.45,release:.16,tone:6500},
 {id:'reed',name:'Warm Reed',category:'Leads',description:'Un aire de instrumento de viento, cálido y expresivo.',ratio:1,index:1.8,attack:.07,decay:.3,sustain:.65,release:.3,tone:2800}
 ];
+// Lift quiet key strikes without raising the maximum or changing MIDI note-off.
+export function playableVelocity(value){
+ if(!Number.isFinite(value)||value<=0)return 0;
+ const v=Math.max(1,Math.min(127,value));
+ return 36+91*Math.pow((v-1)/126,.65);
+}
 export const frequency=note=>440*2**((note-69)/12);
 export class Synth {
  constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.input=context.createGain();this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createWaveShaper();this.compressor.curve=safetyCurve();this.compressor.oversample='none';this.input.connect(this.compressor);this.compressor.connect(this.master);this.master.connect(context.destination);}
@@ -25,6 +31,7 @@ export class Synth {
  }
  volume(value){this.master.gain.setTargetAtTime(Math.max(0,Math.min(1,value)),this.context.currentTime,.015);}
  noteOn(key,note,velocity=100,channel='local'){
+  velocity=playableVelocity(velocity);if(!velocity){this.noteOff(key);return;}
   this.stop(key,true);if(this.voices.size>=this.maxVoices)this.stop(this.voices.keys().next().value,true);
   const c=this.context,p=this.preset,t=c.currentTime,hz=frequency(note),v=Math.max(1,Math.min(127,velocity))/127;
   const carrier=c.createOscillator(),mod=c.createOscillator(),depth=c.createGain(),amp=c.createGain(),filter=c.createBiquadFilter();
