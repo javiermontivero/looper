@@ -29,7 +29,7 @@ export function buttonDown(event){
 // A momentary MIDI button sends a nonzero value on press and zero on release.
 // Queue actions so a quick second press cannot overtake AudioWorklet startup.
 export class TrackButtons{
- constructor(dispatch,{holdMs=1000,schedule=setTimeout,cancel=clearTimeout,onError=()=>{}}={}){
+ constructor(dispatch,{holdMs=1000,schedule=(fn,ms)=>globalThis.setTimeout(fn,ms),cancel=id=>globalThis.clearTimeout(id),onError=()=>{}}={}){
   this.dispatch=dispatch;this.holdMs=holdMs;this.schedule=schedule;this.cancel=cancel;
   this.onError=onError;this.held=new Map();this.pending=Promise.resolve();this.generation=0;
  }

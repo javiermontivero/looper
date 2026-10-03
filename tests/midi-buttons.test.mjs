@@ -1,3 +1,5 @@
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {TrackButtons,buttonDown,decode,learnMapping} from '../public/midi.js';
@@ -40,4 +42,32 @@ test('slow engine startup cannot reorder a second press or a held clear',async()
  buttons.handle(0,true);buttons.handle(0,false);buttons.handle(0,true);fire();
  await Promise.resolve();assert.equal(actions.length,0);ready();await buttons.pending;
  assert.deepEqual(actions,[['trigger',0],['trigger',0],['clear',0]]);
+});
+
+test('default timers retain the browser Window receiver on press, release and reset',async()=>{
+ const source=(await readFile(new URL('../public/midi.js',import.meta.url),'utf8')).replace(/^export /gm,'');
+ const realm=vm.createContext({assert});
+ await vm.runInContext(`
+ const timers=new Map();let nextId=0;const actions=[];
+ globalThis.setTimeout=function(fn,ms){
+  if(this!==globalThis)throw new TypeError('setTimeout requires Window receiver');
+  assert.equal(ms,1000);timers.set(++nextId,fn);return nextId;
+ };
+ globalThis.clearTimeout=function(id){
+  if(this!==globalThis)throw new TypeError('clearTimeout requires Window receiver');
+  timers.delete(id);
+ };
+ `+source+`
+ (async()=>{
+  const buttons=new TrackButtons((type,track)=>actions.push(type+':'+track));
+  buttons.handle(0,true);buttons.handle(0,false);await buttons.pending;
+  assert.equal(timers.size,0);assert.equal(actions.join(','),'trigger:0');
+  buttons.handle(1,true);await buttons.pending;
+  for(const fn of timers.values())fn();timers.clear();await buttons.pending;
+  buttons.handle(1,false);
+  assert.equal(actions.join(','),'trigger:0,trigger:1,clear:1');
+  buttons.handle(2,true);buttons.reset();await buttons.pending;
+  assert.equal(timers.size,0);assert.equal(actions.length,3);
+ })();
+ `,realm);
 });
