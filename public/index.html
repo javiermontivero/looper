@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10130f"><title>Looper · Tocá algo</title><link rel="icon" href="./icon.svg"><link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script></head>
+<body>
+<header><a class="brand" href="./index.html"><img src="./icon.svg" alt="">looper<span>LAB / 01</span></a><div class="header-right"><span id="audio-status" class="badge">Audio apagado</span><button id="power" class="primary">Activar audio + MIDI</button></div></header>
+<main>
+<section class="intro"><div><p class="eyebrow">UN TECLADO. UN SONIDO. EMPEZÁ POR AHÍ.</p><h1>Tocá algo.</h1><p>Elegí un sonido y dejá que aparezca la idea.</p></div><div class="version">SYNTH ENGINE <strong>FM / POLIFÓNICO</strong></div></section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<div class="layout">
+<section class="sounds panel" aria-labelledby="sounds-title"><div class="section-head"><h2 id="sounds-title">Sonidos</h2><span id="preset-count" class="muted"></span></div><div class="filters" role="group" aria-label="Filtrar sonidos"><button class="active" data-filter="Todos">Todos</button><button data-filter="Teclas">Teclas</button><button data-filter="Bajos">Bajos</button><button data-filter="Pads">Pads</button><button data-filter="Leads">Leads</button></div><div id="presets" class="preset-grid"></div></section>
+<aside class="panel controls"><div class="section-head"><h2>Tu instrumento</h2><span class="live-dot" id="midi-dot"></span></div>
+<label for="midi-input">ENTRADA MIDI</label><select id="midi-input"><option value="">Sin teclado conectado</option></select><p id="midi-status" class="hint" aria-live="polite">Conectá tu teclado USB y activá MIDI.</p><button id="connect" class="wide">Conectar MIDI</button>
+<div class="divider"></div><div class="volume-title"><label for="volume">VOLUMEN</label><output id="volume-value">65%</output></div><input id="volume" type="range" min="0" max="100" value="65"><button class="learn" data-learn="volume">Asignar perilla MIDI</button>
+<div class="divider"></div><label>CONTROLES MIDI</label><div class="mapping"><span>Sonido anterior</span><button class="learn" data-learn="previous">Asignar</button></div><div class="mapping"><span>Sonido siguiente</span><button class="learn" data-learn="next">Asignar</button></div><p id="learn-status" class="hint" aria-live="polite">Asigná un botón, pad o tecla. Las teclas asignadas se reservan como controles.</p><button id="clear-mappings" class="text-button">Borrar asignaciones</button>
+<div class="divider"></div><button id="panic" class="wide">Silenciar todas las notas <kbd>Esc</kbd></button></aside>
+</div>
+<section class="panel performance"><div class="section-head"><div><p class="eyebrow">ESTÁS TOCANDO</p><h2 id="current-preset">Velvet EP</h2><p id="preset-description" class="hint"></p></div><div class="octave"><button id="octave-down" aria-label="Bajar octava">−</button><span>OCTAVA <strong id="octave-value">4</strong></span><button id="octave-up" aria-label="Subir octava">+</button></div></div><div class="keyboard-wrap"><div id="keyboard" class="keyboard" aria-label="Teclado virtual"></div></div><div class="keyboard-footer"><span>Mouse, pantalla táctil o teclado <kbd>A W S E D F T G Y H U J K</kbd></span><span id="last-note">Esperando tu primera nota</span></div></section>
+<footer><span><span class="tiny-dot"></span> Hecho para tocar, sin menús de más.</span><span>v0.1 · Sintetizador / Looper de 5 pistas próximamente</span></footer>
+</main></body></html>

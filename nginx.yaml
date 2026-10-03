@@ -1,0 +1,3 @@
+port: 18865
+strip_prefix: true
+websocket: false
