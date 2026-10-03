@@ -49,7 +49,7 @@ test('HTTP serves health and prefixed assets; refuses paths outside allowlist',a
  const server=createServer(handler);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{const base='http://127.0.0.1:'+server.address().port;
   assert.equal((await(await fetch(base+'/health')).json()).status,'ok');
-  const html=await fetch(base+'/looper/');assert.equal(html.status,200);assert.match(await html.text(),/Tocá algo/);
+  const html=await fetch(base+'/looper/');assert.equal(html.status,200);assert.match(await html.text(),/<title>Looper<\/title>/);
   const js=await fetch(base+'/looper/app.js');assert.match(js.headers.get('content-type'),/javascript/);
   assert.match(js.headers.get('permissions-policy'),/midi/);
   assert.equal((await fetch(base+'/server.mjs')).status,404);

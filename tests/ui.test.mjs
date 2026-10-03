@@ -53,13 +53,13 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   setTimeout,clearTimeout,performance,
   AudioContext,Synth,PRESETS,Looper:FakeLooper,decode:()=>null,matches:()=>false,learnMapping:()=>null};
  vm.runInNewContext(source,globals);
- assert.equal(ids.get('presets').children.length,12,'startup must finish rendering presets');
+ assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,12,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const click=async(type,track)=>{actions.find(b=>b.dataset.loopAction===type&&b.dataset.track===String(track)).onclick();await new Promise(setImmediate);};
  await click('record',0);
  assert.equal(core.active,0,'click starts capture');
  core.process(new Float32Array(1000).fill(.25),new Float32Array(1000));publish();
- assert.match(ids.get('loop-clock').textContent,/1.0 s/);
+ assert.equal(ids.get('track-0').querySelector('.track-state').textContent,'REC');
  await click('record',0);
  assert.equal(core.length,1000);assert.equal(core.tracks[0].hasAudio,true);
  assert.equal(ids.get('track-0').querySelector('[data-loop-action="record"]').textContent,'Overdub');
