@@ -1,4 +1,4 @@
-import {PRESETS,Synth} from './synth.js';
+import {PRESETS,Synth} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -6,7 +6,7 @@ const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fa
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
 let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
-let preset=PRESETS.find(p=>p.id===read('looper:preset','velvet'))||PRESETS[0];
+let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latches=new Map(),computer=new Set();
 const trackButtons=new TrackButtons(loopCommand,{onError:error=>notice('MIDI: '+errorText(error))});
@@ -16,12 +16,12 @@ async function activate(){
  if(context?.state==='running')return true;
  if(starting)return starting;
  starting=(async()=>{try{
-  if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context);synth.preset=preset;synth.volume(volume/100);context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};}
+  if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context,{onStatus:message=>{$('#sound-status').textContent=message;$('#sound-status').hidden=!message;}});synth.selectPreset(preset);synth.volume(volume/100);context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};}
   await context.resume();return context.state==='running';
  }catch(e){notice('No se pudo activar el audio: '+errorText(e));return false;}
  finally{starting=null;}})();return starting;
 }
-function setPreset(p){preset=p;if(synth)synth.preset=p;$('#sound').value=p.id;save('looper:preset',p.id);}
+function setPreset(p){preset=p;if(synth)synth.selectPreset(p);$('#sound').value=p.id;save('looper:preset',p.id);}
 function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);}
 let lastMidiDelay=null,volumeSaveTimer;
 function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;synth.noteOn(key,note,velocity,channel);}
@@ -100,7 +100,7 @@ async function loopCommand(type,track){
  try{
   if(type==='record'||type==='trigger'){
    if(loopBusy)return;loopBusy=true;
-   try{const engine=await ensureLooper();if(!document.hidden)engine.command(type,track);}finally{loopBusy=false;}
+   try{const engine=await ensureLooper();if(!document.hidden){if(synth.ready===false&&engine.state?.active!==track&&!(type==='trigger'&&engine.state?.tracks?.[track]?.hasAudio)){notice('Esperá a que cargue el sonido o elegí un Sinte FM.');return;}engine.command(type,track);}}finally{loopBusy=false;}
   }else if(looper){if(type==='resume'&&!(await activate()))return;looper.command(type,track);}
  }catch(e){notice('Looper: '+errorText(e));}
 }
@@ -152,7 +152,7 @@ $('#tempo').onchange=event=>{
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
 $('#loop-reset').onclick=()=>{if(confirm('¿Borrar las cinco pistas y empezar una sesión nueva?'))loopCommand('reset');};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
-for(const category of ['Teclas','Bajos','Pads','Leads']){
+for(const category of [...new Set(PRESETS.map(p=>p.category))]){
  const group=document.createElement('optgroup');group.label=category;
  for(const p of PRESETS.filter(p=>p.category===category)){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;group.append(option);}
  $('#sound').append(group);
@@ -176,7 +176,7 @@ function showPerformance(){
  'Latencia base informada: '+ms(context?.baseLatency),
  'Latencia de salida informada: '+ms(context?.outputLatency),
  'Entrega del último evento MIDI: '+(lastMidiDelay===null?'sin datos':lastMidiDelay.toFixed(1)+' ms'),
- 'Voces: '+(synth?.voices?.size||0),
+ 'Voces: '+((synth?.voices?.size||0)+(synth?.sampleVoices?.size||0)),
  'Looper: '+(!looper?'no iniciado':looper.state?.paused?'pausado':looper.state?.active>=0?'grabando':looper.state?.length?'reproduciendo':'vacío')
  ].join('\n');
 }

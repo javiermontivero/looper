@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {PRESETS} from '../public/synth.js';
+import {PRESETS} from '../public/instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from '../public/midi.js';
 import {LoopCore} from '../public/loop-core.js';
 
@@ -46,7 +46,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   core=new LoopCore(1000);publish=()=>{engine.state=core.state();onState(engine.state);};return engine;
  }};
  class AudioContext{constructor(){this.state='running';this.sampleRate=1000;}async resume(){}}
- class Synth{constructor(){this.input={};this.compressor={};}volume(){}panic(){}noteOff(){}}
+ class Synth{constructor(){this.input={};this.compressor={};}volume(){}panic(){}noteOff(){}selectPreset(p){this.preset=p;this.ready=true;return Promise.resolve(true);}}
  const holds=new Map();let timerId=0;
  class TestTrackButtons extends TrackButtons{
   constructor(dispatch,options){super(dispatch,{...options,schedule:fn=>{const id=++timerId;holds.set(id,fn);return id;},cancel:id=>holds.delete(id)});}
@@ -58,7 +58,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   setTimeout,clearTimeout,performance,
   AudioContext,Synth,PRESETS,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
- assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,12,'dropdown must contain every preset');
+ assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,18,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const click=async(type,track)=>{actions.find(b=>b.dataset.loopAction===type&&b.dataset.track===String(track)).onclick();await new Promise(setImmediate);};
  await click('record',0);

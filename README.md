@@ -3,7 +3,9 @@
 Versión 0.2 desplegada con autorización del usuario. Incluye cinco pistas de grabación y overdub.
 
 ## Instrumento
-12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y cinco pistas. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
+Seis instrumentos smplr 1.1.0: piano acústico, Wurlitzer, bajo acústico, guitarra nylon, cuerdas y marimba. Se descarga solo el instrumento elegido, con indicador de carga; cambiarlo libera el anterior y conserva los loops de audio. Requiere Internet para descargar la biblioteca y las muestras desde jsDelivr, smpldsnds.github.io y gleitz.github.io. Créditos y licencias en public/sounds.html. Las notas tocadas durante la carga se descartan. Hasta 24 notas sostenidas de samples; pitch bend aplicado a notas nuevas (no a notas ya sonando).
+
+Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y cinco pistas. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
 
 ## Grabación
 - Cinco pistas de audio mono. Cada una puede mezclar sonidos distintos mediante overdub.
@@ -24,13 +26,13 @@ Versión 0.2 desplegada con autorización del usuario. Incluye cinco pistas de g
 ## Motor
 AudioWorklet procesa captura y reproducción en un único reloj de muestras. Captura solo el bus del sintetizador, antes de compresión/volumen; el audio de los loops nunca realimenta la grabación. El sintetizador sigue conectado al monitor en vivo. Hasta unos 58 MB de buffers mono a 48 kHz / 60 s / 5 pistas, reservados por pista al usarse. Saturación del acumulador acotada y compresor compartido a la salida; las entradas/salidas del loop tienen microfundidos para evitar clics.
 
-JavaScript ES modules y Web Audio sin dependencias de terceros. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
+JavaScript ES modules y Web Audio; smplr 1.1.0 se importa dinámicamente desde CDN para los instrumentos muestreados. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
 
 ## Pruebas antes de publicar
 `node --test`: incluye regresiones de MIDI, síntesis, servidor y reloj de muestras del looper.
 `python3 tests/validate_static.py`: comprobaciones offline de módulos publicados y controles.
 
-Las 34 pruebas Node pasaron durante la construcción de la imagen desplegada. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
+La construcción ejecuta las pruebas Node antes de desplegar, incluyendo carga y cambio de instrumentos, sustain, límites de voces y recuperación de errores. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
 
 ## Despliegue
 Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
