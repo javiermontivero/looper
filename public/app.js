@@ -12,14 +12,14 @@ let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=6
 const latencyStats=new LatencyStats();
 let directMidiClick=false;
 const midiActions=['volume','previous','next'];
-// Track CCs are fixed; discard legacy learned track assignments.
+// Track pad notes are fixed; discard legacy learned track assignments.
 for(const action of Object.keys(mappings))if(/^track\d+$/.test(action))delete mappings[action];
 if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
  const observer=new PerformanceObserver(list=>{if(context?.state==='running')for(const entry of list.getEntries())latencyStats.task(entry.duration);});
  observer.observe({type:'longtask',buffered:false});
 }
 const latches=new Map(),computer=new Set();
-const trackCCs=[30];
+const trackNotes=[30];
 const trackButtons=new TrackButtons(fixedTrackCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
@@ -43,8 +43,8 @@ function setLearning(action){trackButtons.reset();learning=learning===action?nul
 function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
- // Reserve CC30..45 before MIDI learn and saved mappings, on every channel.
- if(e.type==='cc'&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
+ // Reserve pad notes 30..45 on channel 1 before MIDI learn and instrument playback.
+ if((e.type==='on'||e.type==='off')&&e.channel===0&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
@@ -112,17 +112,17 @@ async function ensureLooper(){
  return looperStarting;
 }
 async function fixedTrackCommand(type,slot){
- const cc=30+slot;
- let track=trackCCs.indexOf(cc);
+ const note=30+slot;
+ let track=trackNotes.indexOf(note);
  if(track<0){
   if(type!=='trigger')return;
   try{
    const engine=await ensureLooper();
    if(document.hidden)return;
-   track=trackCCs.indexOf(cc);
+   track=trackNotes.indexOf(note);
    if(track<0){
-    if(trackCCs.length>=16)return;
-    track=trackCCs.length;trackCCs.push(cc);engine.command('add');
+    if(trackNotes.length>=16)return;
+    track=trackNotes.length;trackNotes.push(note);engine.command('add');
    }
   }catch(e){notice('Looper: '+errorText(e));return;}
  }
@@ -175,7 +175,7 @@ function renderLoop(state){
 function bindTrack(row){
  for(const b of row.querySelectorAll('[data-loop-action]'))b.onclick=()=>{
   const type=b.dataset.loopAction,track=Number(b.dataset.track);
-  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(trackCCs[track]-29)+'?'))return;
+  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(trackNotes[track]-29)+'?'))return;
   loopCommand(type,track);
  };
  for(const b of row.querySelectorAll('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
@@ -184,15 +184,15 @@ function syncTracks(count){
  if(trackCount===count)return;
  while(trackCount<count){
   const i=trackCount++,row=document.createElement('article');
-  row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackCCs[i]-29));
-  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">CC30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('CC30','CC'+trackCCs[i]).replace(/pista 1/g,'pista '+(trackCCs[i]-29)).replace(/Pista 1/g,'Pista '+(trackCCs[i]-29)).replace('>01<','>'+String(trackCCs[i]-29).padStart(2,'0')+'<');
+  row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackNotes[i]-29));
+  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">Nota 30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('Nota 30','Nota '+trackNotes[i]).replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace(/Pista 1/g,'Pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
   $('#tracks').append(row);bindTrack(row);
  }
  while(trackCount>count){$('#track-'+(--trackCount)).remove();}
  $('#add-track').disabled=trackCount>=16;renderMappings();
 }
 bindTrack($('#track-0'));
-$('#add-track').onclick=()=>{if(trackCCs.length>=16)return;let cc=30;while(trackCCs.includes(cc))cc++;trackCCs.push(cc);if(looper)looper.command('add');else syncTracks(trackCCs.length);};
+$('#add-track').onclick=()=>{if(trackNotes.length>=16)return;let note=30;while(trackNotes.includes(note))note++;trackNotes.push(note);if(looper)looper.command('add');else syncTracks(trackNotes.length);};
 let metroBusy=false;
 $('#metronome').onclick=async()=>{
  if(metroBusy)return;metroBusy=true;
@@ -205,7 +205,7 @@ $('#tempo').onchange=event=>{
  if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 8 compases · '+(32*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
-$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackCCs.splice(0,trackCCs.length,30);loopCommand('reset');}};
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);loopCommand('reset');}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 for(const category of [...new Set(PRESETS.map(p=>p.category))]){
  const group=document.createElement('optgroup');group.label=category;
