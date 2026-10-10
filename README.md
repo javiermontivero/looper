@@ -36,6 +36,8 @@ JavaScript ES modules y Web Audio; smplr 1.1.0 se importa dinámicamente desde C
 La construcción ejecuta las pruebas Node antes de desplegar, incluyendo carga y cambio de instrumentos, sustain, límites de voces y recuperación de errores. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
 
 ## Despliegue
+GitHub Pages para las versiones publicadas: ver [PAGES.md](PAGES.md). El workflow publica tras una Release estable o una ejecución manual, siempre después de pasar las pruebas.
+
 Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
 
 ## Diagnóstico de latencia
