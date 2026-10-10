@@ -5,7 +5,7 @@ export class Looper {
     return new Looper(context,source,destination,onState,onError);
   }
   constructor(context,source,destination,onState,onError){
-    this.context=context;this.prepared=new Set();this.hasAudio=false;this.active=-1;
+    this.context=context;this.trackCount=1;this.prepared=new Set();this.hasAudio=false;this.active=-1;
     this.node=new AudioWorkletNode(context,'five-track-looper',{
       numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit'
     });
@@ -18,6 +18,9 @@ export class Looper {
   }
   command(type,track,value){
     if(this.failed)throw new Error('El motor de grabación no está disponible.');
+    // Track additions are synchronous here; worklet state messages arrive later.
+    if(type==='add'){if(this.trackCount>=16)return;this.trackCount++;}
+    if(type==='reset')this.trackCount=1;
     if((type==='record'||type==='trigger')&&!this.prepared.has(track)){
       const data=new Float32Array(Math.ceil(this.context.sampleRate*60));
       this.node.port.postMessage({type:'prepare',track,data},[data.buffer]);

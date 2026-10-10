@@ -11,13 +11,16 @@ let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latencyStats=new LatencyStats();
 let directMidiClick=false;
-const midiActions=['volume','previous','next',...Array.from({length:16},(_,i)=>'track'+i)];
+const midiActions=['volume','previous','next'];
+// Track CCs are fixed; discard legacy learned track assignments.
+for(const action of Object.keys(mappings))if(/^track\d+$/.test(action))delete mappings[action];
 if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
  const observer=new PerformanceObserver(list=>{if(context?.state==='running')for(const entry of list.getEntries())latencyStats.task(entry.duration);});
  observer.observe({type:'longtask',buffered:false});
 }
 const latches=new Map(),computer=new Set();
-const trackButtons=new TrackButtons(loopCommand,{onError:error=>notice('MIDI: '+errorText(error))});
+const trackCCs=[30];
+const trackButtons=new TrackButtons(fixedTrackCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
 async function activate(){
@@ -40,6 +43,8 @@ function setLearning(action){trackButtons.reset();learning=learning===action?nul
 function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
+ // Reserve CC30..45 before MIDI learn and saved mappings, on every channel.
+ if(e.type==='cc'&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
@@ -106,11 +111,29 @@ async function ensureLooper(){
    .then(value=>{looper=value;for(let i=1;i<requestedTracks;i++)looper.command('add');looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
+async function fixedTrackCommand(type,slot){
+ const cc=30+slot;
+ let track=trackCCs.indexOf(cc);
+ if(track<0){
+  if(type!=='trigger')return;
+  try{
+   const engine=await ensureLooper();
+   if(document.hidden)return;
+   track=trackCCs.indexOf(cc);
+   if(track<0){
+    if(trackCCs.length>=16)return;
+    track=trackCCs.length;trackCCs.push(cc);engine.command('add');
+   }
+  }catch(e){notice('Looper: '+errorText(e));return;}
+ }
+ return loopCommand(type,track);
+}
 async function loopCommand(type,track){
  try{
   if(type==='record'||type==='trigger'){
    if(loopBusy)return;loopBusy=true;
-   try{const engine=await ensureLooper();if(!document.hidden){if(synth.ready===false&&engine.state?.active!==track&&engine.state?.pending!==track&&!(type==='trigger'&&engine.state?.tracks?.[track]?.hasAudio)){notice('Esperá a que cargue el sonido o elegí un Sinte FM.');return;}engine.command(type,track);}}finally{loopBusy=false;}
+   try{const engine=await ensureLooper();if(!document.hidden){
+    if(synth.ready===false&&engine.state?.active!==track&&engine.state?.pending!==track&&!(type==='trigger'&&engine.state?.tracks?.[track]?.hasAudio)){notice('Esperá a que cargue el sonido o elegí un Sinte FM.');return;}engine.command(type,track);}}finally{loopBusy=false;}
   }else if(looper){if(type==='resume'&&!(await activate()))return;looper.command(type,track);}
  }catch(e){notice('Looper: '+errorText(e));}
 }
@@ -152,7 +175,7 @@ function renderLoop(state){
 function bindTrack(row){
  for(const b of row.querySelectorAll('[data-loop-action]'))b.onclick=()=>{
   const type=b.dataset.loopAction,track=Number(b.dataset.track);
-  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(track+1)+'?'))return;
+  if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(trackCCs[track]-29)+'?'))return;
   loopCommand(type,track);
  };
  for(const b of row.querySelectorAll('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
@@ -161,15 +184,15 @@ function syncTracks(count){
  if(trackCount===count)return;
  while(trackCount<count){
   const i=trackCount++,row=document.createElement('article');
-  row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(i+1));
-  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><button data-learn=\"track0\">Asignar MIDI</button><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace(/track0/g,'track'+i).replace(/pista 1/g,'pista '+(i+1)).replace(/Pista 1/g,'Pista '+(i+1)).replace('>01<','>'+String(i+1).padStart(2,'0')+'<');
+  row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackCCs[i]-29));
+  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">CC30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('CC30','CC'+trackCCs[i]).replace(/pista 1/g,'pista '+(trackCCs[i]-29)).replace(/Pista 1/g,'Pista '+(trackCCs[i]-29)).replace('>01<','>'+String(trackCCs[i]-29).padStart(2,'0')+'<');
   $('#tracks').append(row);bindTrack(row);
  }
  while(trackCount>count){$('#track-'+(--trackCount)).remove();}
  $('#add-track').disabled=trackCount>=16;renderMappings();
 }
 bindTrack($('#track-0'));
-$('#add-track').onclick=()=>{if(trackCount>=16)return;if(looper)looper.command('add');else syncTracks(trackCount+1);};
+$('#add-track').onclick=()=>{if(trackCCs.length>=16)return;let cc=30;while(trackCCs.includes(cc))cc++;trackCCs.push(cc);if(looper)looper.command('add');else syncTracks(trackCCs.length);};
 let metroBusy=false;
 $('#metronome').onclick=async()=>{
  if(metroBusy)return;metroBusy=true;
@@ -182,7 +205,7 @@ $('#tempo').onchange=event=>{
  if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 8 compases · '+(32*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
-$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;loopCommand('reset');}};
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackCCs.splice(0,trackCCs.length,30);loopCommand('reset');}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 for(const category of [...new Set(PRESETS.map(p=>p.category))]){
  const group=document.createElement('optgroup');group.label=category;

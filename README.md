@@ -7,7 +7,7 @@ Siete instrumentos smplr 1.1.0: piano acústico, Wurlitzer, bajo acústico, guit
 
 Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
-Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y entre 1 y 16 pistas. Aprendizaje MIDI de volumen, cambio de preset y encendido/apagado de cada pista. Preferencias y asignaciones en localStorage.
+Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voces, velocidad, sustain y pitch bend ±2 semitonos. Teclado USB MIDI y de computadora. Interfaz móvil con dropdown de sonidos y entre 1 y 16 pistas. Aprendizaje MIDI de volumen y cambio de preset. Pistas con controles fijos CC30–45 (pistas 1–16), independientes del canal y del identificador del dispositivo seleccionado. Preferencias y asignaciones en localStorage.
 
 ## Grabación
 - Arranca con una pista; + Agregar pista añade hasta 16. Cada pista puede mezclar sonidos mediante overdub. Nueva sesión vuelve a una pista y libera sus buffers.
@@ -20,7 +20,8 @@ Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voce
 - Overdub mezcla sobre el audio existente conservando su duración, hasta Cerrar. Solo una toma activa; cerrar antes de armar otra pista.
 - BPM 40–240: cambiarlo acelera/frena el audio y cambia su tono. La guía también sigue ese BPM. Bloqueado durante toma o espera; no afecta las notas en vivo.
 - Metrónomo Clic: un pulso por beat calculado por muestras. No entra en la grabación. Pausar/Silenciar todo lo apaga.
-- Botón MIDI asignado: vacía graba/arma, en espera cancela, grabando cierra, con audio alterna reproducción/silencio. Mantener 1 s borra. Requiere botón momentáneo (CC positivo al pulsar, 0 al soltar, o Note On/Off). El overdub se inicia desde la pantalla.
+- Controles fijos CC30–45: CC30 controla la pista 1, CC31 la 2, hasta CC45/pista 16. Al pulsar un CC no utilizado se agrega únicamente su pista, sin crear las intermedias. Las pistas se muestran en orden de creación con su número fijo; CC35 corresponde siempre a la pista 6. El botón Agregar utiliza el primer CC libre. Tienen prioridad sobre asignaciones guardadas y aprendizaje; las antiguas asignaciones de pistas se ignoran. No se agregan pistas al soltar ni con CC fuera del rango.
+- Botón MIDI de pista: vacía graba/arma, en espera cancela, grabando cierra, con audio alterna reproducción/silencio. Mantener 1 s borra. Requiere botón momentáneo (CC positivo al pulsar, 0 al soltar). El overdub se inicia desde la pantalla.
 - Silenciar una pista conserva su fase. Pausar congela el reloj y cierra la toma activa inmediatamente. Esc o perder foco también pausa.
 - Audio en memoria: se pierde al recargar/cerrar. Sin persistencia, exportación, edición, undo ni estiramiento de tiempo.
 

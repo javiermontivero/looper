@@ -43,7 +43,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   createElement:()=>new Element(),addEventListener(){}
  };
  let core,publish;
- const engine={command(type,track,value){
+ const engine={get trackCount(){return core.tracks.length;},command(type,track,value){
   if((type==='record'||type==='trigger')&&!core.tracks[track].data)core.command({type:'prepare',track,data:new Float32Array(core.capacity)});
   core.command({type,track,value});publish();
  }};
@@ -57,7 +57,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   constructor(dispatch,options){super(dispatch,{...options,schedule:fn=>{const id=++timerId;holds.set(id,fn);return id;},cancel:id=>holds.delete(id)});}
  }
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
-  navigator:{},localStorage:{getItem(){return null;},setItem(){}},
+  navigator:{},localStorage:{getItem(key){return key==='looper:mappings'?JSON.stringify({volume:{device:'keyboard',channel:0,type:'cc',number:32},track0:{device:'keyboard',channel:0,type:'cc',number:20}}):null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout,clearTimeout,performance,
@@ -65,6 +65,20 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  vm.runInNewContext(source,globals);
  assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,19,'dropdown must contain every preset');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
+ const sendCC=(number,value,status=0xb0,device='keyboard')=>globals.process({data:[status,number,value]},device);
+ const settle=()=>new Promise(setImmediate);
+ sendCC(45,0);await settle();assert.equal(core,undefined,'release alone cannot create a track or audio engine');
+ sendCC(32,127);sendCC(32,0);await settle();
+ assert.equal(core.tracks.length,2,'first CC32 adds only its own track');
+ assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 3');
+ assert.equal(core.active,1,'release during engine startup does not close recording');
+ assert.equal(ids.get('volume').value,65,'fixed CC takes priority over old volume mapping');
+ assert.equal(core.tracks[0].data,null,'unused initial track allocates no audio');
+ core.process(new Float32Array(300).fill(.25),new Float32Array(300));
+ sendCC(32,127);sendCC(32,0);await settle();assert.equal(core.active,-1);assert.equal(core.tracks[1].hasAudio,true);
+ ids.get('loop-reset').onclick();assert.equal(core.tracks.length,1);
+ sendCC(20,127);sendCC(20,0);await settle();assert.equal(core.active,-1,'legacy learned track assignments are ignored');
+
  const click=async(type,track)=>{actions.find(b=>b.dataset.loopAction===type&&b.dataset.track===String(track)).onclick();await new Promise(setImmediate);};
  await click('record',0);
  assert.equal(core.active,0,'click starts capture');
@@ -89,11 +103,8 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  await click('record',0);assert.equal(ids.get('tempo').disabled,true);await click('record',0);assert.equal(ids.get('tempo').disabled,false);
  await click('clear',15);assert.equal(core.length,1000);
  core.process(new Float32Array(10),new Float32Array(10));
- const midi=value=>globals.process({data:[0xb0,20,value]},'keyboard');
+ const midi=value=>globals.process({data:[0xb0,33,value]},'keyboard');
  const flush=()=>new Promise(setImmediate);
- buttons.find(b=>b.dataset.learn==='track3').onclick();
- midi(1);midi(0);await flush();
- assert.equal(core.active,-1,'learning consumes press and release');
  midi(1);await flush();assert.equal(core.pending,3,'CC 1 arms an empty track');
  midi(1);await flush();assert.equal(core.pending,3,'duplicate CC does not cancel it');
  midi(0);core.process(new Float32Array(Math.ceil((core.length-core.position)/core.speed)).fill(0),new Float32Array(Math.ceil((core.length-core.position)/core.speed)));core.process(new Float32Array(300).fill(.2),new Float32Array(300));publish();
@@ -108,5 +119,34 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(core.metronome,true);assert.equal(ids.get('metronome').attrs['aria-pressed'],'true');
  await ids.get('metronome').onclick();assert.equal(core.metronome,false);
  ids.get('loop-reset').onclick();assert.equal(core.tracks.length,1);assert.equal(ids.has('track-15'),false);
+ sendCC(46,127);sendCC(29,127);sendCC(45,0);await flush();
+ assert.equal(core.tracks.length,1,'out-of-range CC and release do not add tracks');
+ sendCC(45,127,0xb7,'reconnected-keyboard');sendCC(45,127,0xb7,'reconnected-keyboard');await flush();
+ assert.equal(core.tracks.length,2,'CC45 adds only its own track, without intermediate rows');
+ assert.equal(core.active,1,'fixed controls work on any channel and after device ID changes');
+ assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 16');assert.equal(ids.get('add-track').disabled,false);
+ assert.equal(core.tracks[0].data,null,'only the selected track reserves audio');
+ sendCC(45,0,0xb7,'reconnected-keyboard');await flush();assert.equal(core.active,1);
+ for(const fn of [...holds.values()])fn();holds.clear();await flush();
+ assert.equal(core.active,1,'release cancels hold-to-clear');
+ core.process(new Float32Array(300).fill(.25),new Float32Array(300));
+ sendCC(45,127,0xb7,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
+ for(const fn of [...holds.values()])fn();holds.clear();await flush();
+ assert.equal(core.tracks[1].hasAudio,false,'hold clears a track created by its fixed CC');
+ sendCC(45,0,0xb7,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
+ sendCC(31,127);sendCC(31,0);await flush();
+ assert.equal(core.tracks.length,3);assert.equal(core.active,2,'CC31 gets its own new slot after CC45');
+ assert.equal(ids.get('track-2').attrs['aria-label'],'Pista 2');
+ core.process(new Float32Array(300).fill(.25),new Float32Array(300));
+ sendCC(31,127);sendCC(31,0);await flush();assert.equal(core.active,-1);
+ sendCC(31,127);sendCC(31,0);await flush();assert.equal(core.tracks[2].muted,true);
+ assert.equal(core.tracks.length,3,'reusing CC31 does not add a duplicate');
+ ids.get('add-track').onclick();assert.equal(core.tracks.length,4);
+ assert.equal(ids.get('track-3').attrs['aria-label'],'Pista 3','manual add chooses the first unused CC');
+ sendCC(32,127);sendCC(32,0);await flush();
+ assert.equal(core.tracks.length,4,'CC32 reuses the manually added track');
+ assert.ok(core.active===3||core.pending===3);
+
+
 
 });
