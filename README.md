@@ -49,3 +49,20 @@ Mide las últimas 128 entregas MIDI y preparaciones de notas (mediana/p95/máxim
 
 ## Respuesta de intensidad
 Notas MIDI positivas usan la curva 36 + 91 × ((v−1)/126)^0,65, aplicada una sola vez por motor. Levanta los toques suaves sin aumentar el máximo 127; velocity 0 sigue siendo Note Off. También cambia la selección de capas de samples en instrumentos que las tienen. Afecta notas nuevas y su captura, no modifica loops ya grabados. No agrega buffers ni espera. El clic de diagnóstico conserva su intensidad fija.
+
+## Pots y volumen del MiniControl
+Canal MIDI 1, modo CC absoluto: CC13 elige el rol musical, CC14 el sonido dentro
+del rol y CC7 controla el volumen master (instrumento, loops y clic).
+Los roles mezclan los 19 sonidos ya incluidos: base rítmica, bajos,
+acompañamiento, fondos, melodías y acentos/texturas. Un sonido puede figurar
+en varios roles sin duplicar sus muestras. El catálogo ampliado de Soundfonts
+todavía no se incorporó.
+
+Cada rol recuerda su última variante. El selector visual responde al pot
+inmediatamente; la carga se solicita tras 250 ms sin cambiar la selección.
+Hay un margen de un paso MIDI en los límites para evitar oscilaciones.
+Solo se carga el instrumento elegido, conservando los loops.
+Los controles fijos tienen prioridad sobre el aprendizaje y las asignaciones
+antiguas; las asignaciones antiguas de volumen se ignoran. El slider de pantalla
+y CC7 siguen sincronizados. Los controles anterior/siguiente aprendidos recorren
+el rol actual. Perder foco, desconectar o silenciar cancela un cambio pendiente.

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
+import {SoundBrowser} from '../public/sound-browser.js';
 import {PRESETS} from '../public/instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from '../public/midi.js';
 import {LatencyStats} from '../public/latency.js';
@@ -51,20 +52,23 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   core=new LoopCore(1000);publish=()=>{engine.state=core.state();onState(engine.state);};return engine;
  }};
  class AudioContext{constructor(){this.state='running';this.sampleRate=1000;}async resume(){}}
- const played=[];
- class Synth{noteOn(...args){played.push(args);}constructor(){this.input={};this.compressor={};}volume(){}panic(){}noteOff(){}selectPreset(p){this.preset=p;this.ready=true;return Promise.resolve(true);}}
+ const played=[],loaded=[];let masterGain;
+ class Synth{noteOn(...args){played.push(args);}constructor(){this.input={};this.compressor={};}volume(value){masterGain=value;}panic(){}noteOff(){}selectPreset(p){loaded.push(p.id);this.preset=p;this.ready=true;return Promise.resolve(true);}}
  const holds=new Map();let timerId=0;
  class TestTrackButtons extends TrackButtons{
   constructor(dispatch,options){super(dispatch,{...options,schedule:fn=>{const id=++timerId;holds.set(id,fn);return id;},cancel:id=>holds.delete(id)});}
  }
+ const soundTimers=new Map();let soundTimerId=10000;
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
   navigator:{},localStorage:{getItem(key){return key==='looper:mappings'?JSON.stringify({next:{device:'keyboard',channel:0,type:'note',number:32},track0:{device:'keyboard',channel:0,type:'cc',number:20}}):null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
-  setTimeout,clearTimeout,performance,
-  AudioContext,Synth,PRESETS,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
+  setTimeout:(fn,ms)=>{if(ms===250){const id=++soundTimerId;soundTimers.set(id,fn);return id;}return setTimeout(fn,ms);},clearTimeout:id=>{if(soundTimers.has(id))soundTimers.delete(id);else clearTimeout(id);},performance,
+  AudioContext,Synth,PRESETS,SoundBrowser,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
- assert.equal(ids.get('sound').children.flatMap(group=>group.children).length,19,'dropdown must contain every preset');
+ assert.equal(ids.get('sound-role').children.length,6,'six musical roles');
+ assert.equal(ids.get('sound-role').value,'accompaniment');
+ assert.equal(ids.get('sound').children.length,6,'sound dropdown shows only the current role');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const sendPad=(number,value,status=0x90,device='keyboard')=>globals.process({data:[status,number,value]},device);
  const settle=()=>new Promise(setImmediate);
@@ -167,6 +171,37 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  sendPad(32,127);sendPad(32,0);await flush();
  assert.equal(core.tracks.length,4,'note 32 reuses the manually added track');
  assert.ok(core.active===3||core.pending===3);
+ const cc=(number,value,status=0xb0)=>globals.process({data:[status,number,value]},'keyboard');
+ const loadSelected=()=>{const callbacks=[...soundTimers.values()];soundTimers.clear();for(const fn of callbacks)fn();};
+ const recordedLength=core.length;
+ cc(7,0);assert.equal(masterGain,0);assert.equal(ids.get('volume').value,0);
+ cc(7,127);assert.equal(masterGain,1);assert.equal(ids.get('volume').value,100);
+ cc(7,64);assert.equal(ids.get('volume').value,50);assert.equal(masterGain,.5);
+ cc(7,0,0xb1);assert.equal(masterGain,.5,'fixed slider only listens on channel 1');
+ const before=loaded.length;
+ cc(13,30);assert.equal(ids.get('sound-role').value,'bass');
+ cc(14,127);assert.equal(ids.get('sound').value,'rubber');
+ assert.equal(loaded.length,before,'pot movements do not start immediate sample loads');
+ assert.equal(soundTimers.size,1);loadSelected();
+ assert.equal(loaded.at(-1),'rubber');assert.equal(loaded.length,before+1);
+ cc(14,127);assert.equal(soundTimers.size,0,'duplicate values do not reload the sound');
+ cc(13,127);cc(14,0);loadSelected();assert.equal(loaded.at(-1),'marimba');
+ cc(13,30);assert.equal(ids.get('sound').value,'rubber','role remembers its last variant');loadSelected();
+ assert.equal(loaded.at(-1),'rubber');
+ assert.equal(core.length,recordedLength,'instrument and master changes preserve recorded loops');
+ const beforeCancel=loaded.length;
+ cc(13,0);assert.equal(soundTimers.size,1);globals.panic();loadSelected();
+ assert.equal(loaded.length,beforeCancel,'panic cancels pending sound selection');
+ assert.equal(ids.get('sound').value,'rubber');
+ ids.get('sound-role').onchange({target:{value:'accompaniment'}});
+ assert.equal(ids.get('sound').value,'piano');assert.equal(loaded.at(-1),'piano');
+ ids.get('sound').onchange({target:{value:'guitar'}});
+ assert.equal(ids.get('sound').value,'guitar');assert.equal(loaded.at(-1),'guitar');
+ const learn=buttons.find(b=>b.dataset.learn==='previous');learn.onclick();
+ cc(13,30);assert.ok(ids.get('learn-status').textContent.startsWith('Pulsá'),'fixed pots cannot be reassigned by learn');
+ cc(7,127);assert.equal(masterGain,1);learn.onclick();
+ loadSelected();
+
 
 
 

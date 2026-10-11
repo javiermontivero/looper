@@ -1,3 +1,4 @@
+import {SoundBrowser} from './sound-browser.js';
 import {LatencyStats} from './latency.js';
 import {PRESETS,Synth} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
@@ -8,10 +9,13 @@ const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}ca
 let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
+const soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{})});
+let soundTimer,shownRole;
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latencyStats=new LatencyStats();
 let directMidiClick=false;
-const midiActions=['volume','previous','next'];
+const midiActions=['previous','next'];
+delete mappings.volume;
 // Track pad notes are fixed; discard legacy learned track assignments.
 for(const action of Object.keys(mappings))if(/^track\d+$/.test(action))delete mappings[action];
 if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTypes?.includes('longtask')){
@@ -32,12 +36,33 @@ async function activate(){
  }catch(e){notice('No se pudo activar el audio: '+errorText(e));return false;}
  finally{starting=null;}})();return starting;
 }
-function setPreset(p){preset=p;if(synth)synth.selectPreset(p);$('#sound').value=p.id;save('looper:preset',p.id);}
+function renderSoundChoice(){
+ const role=soundBrowser.role;$('#sound-role').value=role.id;
+ if(shownRole!==role.id){
+  $('#sound').replaceChildren();
+  for(const p of role.presets){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;$('#sound').append(option);}
+  shownRole=role.id;
+ }
+ $('#sound').value=soundBrowser.preset.id;
+}
+function setPreset(p){
+ clearTimeout(soundTimer);soundTimer=null;
+ const changed=preset.id!==p.id;preset=p;soundBrowser.choose(p.id);
+ if(synth&&changed)synth.selectPreset(p);
+ renderSoundChoice();save('looper:preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
+}
+function queueSound(){
+ renderSoundChoice();clearTimeout(soundTimer);
+ soundTimer=setTimeout(()=>{soundTimer=null;setPreset(soundBrowser.preset);},250);
+}
+function cancelSoundSelection(){
+ clearTimeout(soundTimer);soundTimer=null;soundBrowser.choose(preset.id);renderSoundChoice();
+}
 function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);}
 let lastMidiDelay=null,volumeSaveTimer;
 function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;const started=performance.now();try{if(directMidiClick)synth.testClick();else synth.noteOn(key,note,velocity,channel);}finally{latencyStats.add('note',performance.now()-started);}}
 function off(key){synth?.noteOff(key);}
-function panic(){synth?.panic();computer.clear();latches.clear();trackButtons.reset();}
+function panic(){cancelSoundSelection();synth?.panic();computer.clear();latches.clear();trackButtons.reset();}
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
 function setLearning(action){trackButtons.reset();learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
 function process(event,device){
@@ -45,12 +70,18 @@ function process(event,device){
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
  // Reserve pad notes 30..45 on channel 1 before MIDI learn and instrument playback.
  if((e.type==='on'||e.type==='off')&&e.channel===0&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
+ // Fixed absolute pots and master slider precede learned mappings.
+ if(e.type==='cc'&&e.channel===0){
+  if(e.number===7){setVolume(e.value/127*100);return;}
+  if(e.number===13){if(soundBrowser.turnRole(e.value))queueSound();return;}
+  if(e.number===14){if(soundBrowser.turnSound(e.value))queueSound();return;}
+ }
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=buttonDown(e);
   if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
-  if(down&&!latches.get(action)){{const i=PRESETS.indexOf(preset);setPreset(PRESETS[(i+(action==='next'?1:-1)+PRESETS.length)%PRESETS.length]);}}
+  if(down&&!latches.get(action)){{const list=soundBrowser.role.presets,i=list.indexOf(soundBrowser.preset);setPreset(list[(i+(action==='next'?1:-1)+list.length)%list.length]);}}
   latches.set(action,down);return;
  }
  if(e.type==='on')on(key,e.number,e.value,channel);
@@ -223,11 +254,8 @@ $('#tempo').onchange=event=>{
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
 $('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);loopCommand('reset');}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
-for(const category of [...new Set(PRESETS.map(p=>p.category))]){
- const group=document.createElement('optgroup');group.label=category;
- for(const p of PRESETS.filter(p=>p.category===category)){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;group.append(option);}
- $('#sound').append(group);
-}
+for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
+$('#sound-role').onchange=event=>{const index=soundBrowser.roles.findIndex(r=>r.id===event.target.value);if(soundBrowser.selectRole(index))setPreset(soundBrowser.preset);};
 $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);if(p)setPreset(p);};
 $('#settings-open').onclick=()=>$('#settings').showModal();
 $('#settings-close').onclick=()=>$('#settings').close();

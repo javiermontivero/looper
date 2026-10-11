@@ -10,3 +10,5 @@
 #count-in-next{font-size:16px;font-weight:650;min-height:24px}
 #count-in[data-stage="last"]{background:#503019;border-color:#ffb477;color:#ffe4c6}
 #count-in[data-stage="recording"]{background:#471e19;border-color:#ff957d;color:#ffb8a7}
+
+.sound-selectors{display:grid;gap:6px;flex:1;min-width:0}.sound-selectors select{width:100%}#sound-role{font-size:12px;min-height:36px;padding:6px 10px;color:var(--muted)}
