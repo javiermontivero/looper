@@ -79,9 +79,9 @@ function process(event,device){
  // Fixed absolute pots and master slider precede learned mappings.
  if(e.type==='cc'&&e.channel===0){
   if(e.number===7){setVolume(e.value/127*100);return;}
-  if(e.number===12){if(soundBrowser.turnPage(e.value))queueSound();return;}
+  if(e.number===14){if(soundBrowser.turnPage(e.value))queueSound();return;}
   if(e.number===13){if(soundBrowser.turnRole(e.value))queueSound();return;}
-  if(e.number===14){if(soundBrowser.turnSound(e.value))queueSound();return;}
+  if(e.number===15){if(soundBrowser.turnSound(e.value))queueSound();return;}
  }
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;

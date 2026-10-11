@@ -8,7 +8,7 @@ El catálogo observado durante esta implementación contiene 862 presets/variant
 
 Los metadatos adicionales se consultan al abrir; el catálogo GM y los presets originales siguen disponibles si falla esa consulta. Ajustes → Sonidos y créditos muestra cantidad y fallos por familia, con botón Actualizar catálogo. No se instancia ni descarga audio al enumerar sonidos: solo al seleccionar uno con audio activado. Se serializan las cargas, se aborta la anterior y se libera el sampler anterior; no se acumulan bancos en RAM. No se encolan notas durante la carga.
 
-Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC12; CC14 recorre los sonidos de la página, todos alcanzables con valores 0–127 en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
+Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC14; CC15 recorre los sonidos de la página, todos alcanzables con valores 0–127 en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
 
 Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
@@ -57,7 +57,7 @@ Mide las últimas 128 entregas MIDI y preparaciones de notas (mediana/p95/máxim
 Notas MIDI positivas usan la curva 36 + 91 × ((v−1)/126)^0,65, aplicada una sola vez por motor. Levanta los toques suaves sin aumentar el máximo 127; velocity 0 sigue siendo Note Off. También cambia la selección de capas de samples en instrumentos que las tienen. Afecta notas nuevas y su captura, no modifica loops ya grabados. No agrega buffers ni espera. El clic de diagnóstico conserva su intensidad fija.
 
 ## Pots y volumen del MiniControl
-Canal MIDI 1, modo CC absoluto: CC13 elige la categoría, CC12 su página y CC14 el instrumento dentro
+Canal MIDI 1, modo CC absoluto: CC13 elige la categoría, CC14 su página y CC15 el instrumento dentro
 de la página y CC7 controla el volumen master (instrumento, loops y clic).
 Los roles mezclan todos los sonidos disponibles: base rítmica, bajos,
 acompañamiento, fondos, melodías y acentos/texturas. Un sonido puede figurar
