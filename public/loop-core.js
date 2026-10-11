@@ -1,7 +1,7 @@
 // Sample-clock transport. Only live instrument input is captured.
 const emptyTrack=()=>({data:null,length:0,position:0,edge:0,hasAudio:false,muted:false,gain:1,mode:'empty'});
 export class LoopCore {
- constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=16}={}){
+ constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=8}={}){
   this.rate=rate;this.capacity=Math.ceil(rate*maxSeconds);this.minimum=Math.ceil(rate*minSeconds);
   this.length=0;this.baseLength=rate*16;this.position=0;this.bpm=120;this.referenceBpm=120;this.speed=1;
   this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;this.paused=false;

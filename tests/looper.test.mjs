@@ -147,11 +147,11 @@ test('clearing the last recorded track while another is armed starts a free take
  assert.equal(c.length,7);assert.equal(c.tracks[1].hasAudio,true);
 });
 
-test('first take counts exactly sixteen beats at the selected BPM without capturing input',()=>{
+test('first take counts exactly eight beats at the selected BPM without capturing input',()=>{
  for(const bpm of [60,120,137,240]){
   const c=new LoopCore(8000);c.command({type:'tempo',value:bpm});prepare(c,0);
   c.command({type:'trigger',track:0});
-  const total=Math.round(8000*60/bpm*16);
+  const total=Math.round(8000*60/bpm*8);
   assert.equal(c.pending,0);assert.equal(c.active,-1);assert.equal(c.countInRemaining,total);
   assert.equal(c.state().countInBeat,0);
   const output=run(c,Array(total-1).fill(.9));

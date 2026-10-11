@@ -102,6 +102,7 @@ let bpm=120,trackCount=1;
 
 let looper,looperStarting,loopBusy=false,lastLoopMessage=-1,lastLoopRevision=-1;
 const loopProgress=$('#loop-progress');
+let countInTrack=-1;
 async function ensureLooper(){
  if(!(await activate()))throw new Error('Activá el audio para grabar.');
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
@@ -146,7 +147,21 @@ function renderLoop(state){
  const base=state.baseSeconds||32*60/bpm;
  loopProgress.value=state.countInRemaining>0?1-state.countInRemaining/state.countInTotal:base?(elapsed%base)/base:0;
  $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*8).toFixed(1)+'/8 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 8 compases · '+base.toFixed(1)+' s');
- if(state.countInRemaining>0)$('#loop-time').textContent='Entrada '+(Math.floor(state.countInBeat/4)+1)+'/4 · '+(state.countInBeat%4+1)+'/4';
+ if(state.countInRemaining>0)$('#loop-time').textContent='Entrada '+(Math.floor(state.countInBeat/4)+1)+'/2 · '+(state.countInBeat%4+1)+'/4';
+ const counting=state.countInRemaining>0,banner=$('#count-in');
+ if(counting)countInTrack=state.pending;
+ const justStarted=!counting&&active&&state.active===countInTrack&&state.elapsed<60/bpm;
+ banner.hidden=!counting&&!justStarted;
+ if(counting){
+  banner.dataset.stage=state.countInBeat===7?'last':'counting';
+  $('#count-in-label').textContent='COMPÁS '+(Math.floor(state.countInBeat/4)+1)+' DE 2';
+  $('#count-in-number').textContent=String(state.countInBeat%4+1);
+  $('#count-in-next').textContent=state.countInBeat===7?'Ahora entrás → REC':'Preparáte';
+ }else if(justStarted){
+  banner.dataset.stage='recording';$('#count-in-label').textContent='GRABANDO';
+  $('#count-in-number').textContent='¡REC!';$('#count-in-next').textContent='Tocá';
+ }else countInTrack=-1;
+
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i];
   const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';

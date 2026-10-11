@@ -76,8 +76,14 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(core.tracks.length,2,'first note 32 adds only its own track');
  assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 3');
  assert.equal(core.pending,1,'first pad enters count-in');assert.equal(core.active,-1);
- assert.ok(ids.get('loop-time').textContent.startsWith('Entrada 1/4'));
- assert.equal(ids.get('tempo').disabled,true);finishCountIn();
+ assert.ok(ids.get('loop-time').textContent.startsWith('Entrada 1/2'));
+ assert.equal(ids.get('tempo').disabled,true);
+ assert.equal(ids.get('count-in').hidden,false);assert.equal(ids.get('count-in-number').textContent,'1');
+ core.process(new Float32Array(3500),new Float32Array(3500));publish();
+ assert.equal(ids.get('count-in-label').textContent,'COMPÁS 2 DE 2');
+ assert.equal(ids.get('count-in-number').textContent,'4');assert.equal(ids.get('count-in').dataset.stage,'last');
+ finishCountIn();assert.equal(ids.get('count-in-number').textContent,'¡REC!');
+
  assert.equal(core.active,1,'release during count-in does not cancel recording');
  assert.equal(ids.get('volume').value,65,'pad never adjusts volume');
  assert.equal(core.tracks[0].data,null,'unused initial track allocates no audio');
