@@ -53,10 +53,33 @@ export class SoundBrowser{
  }
  selectRole(index){if(!Number.isInteger(index)||!this.roles[index])return false;const changed=this.roleIndex!==index;this.roleIndex=index;return changed;}
  selectPage(index){if(!Number.isInteger(index)||!this.role.pages[index])return false;const changed=this.pageIndex!==index;this.rememberedPages[this.role.id]=index;return changed;}
+ step(control,direction){
+  if(!direction)return false;
+  const delta=Math.sign(direction);
+  if(control==='role')return this.selectRole(Math.max(0,Math.min(this.roles.length-1,this.roleIndex+delta)));
+  if(control==='page')return this.selectPage(Math.max(0,Math.min(this.role.pages.length-1,this.pageIndex+delta)));
+  if(control==='sound'){
+   const list=this.page.presets,current=list.indexOf(this.preset),index=Math.max(0,Math.min(list.length-1,current+delta));
+   return index!==current&&this.choose(list[index].id);
+  }
+  return false;
+ }
  turnRole(value){return this.selectRole(potIndex(value,this.roles.length,this.roleIndex));}
  turnPage(value){return this.selectPage(potIndex(value,this.role.pages.length,this.pageIndex));}
  turnSound(value){
   const list=this.page.presets,current=list.indexOf(this.preset),index=potIndex(value,list.length,current);
   if(index===current||!list[index])return false;return this.choose(list[index].id);
+ }
+}
+
+ // Interpret accumulating absolute CC values as one navigation step per message.
+export class RelativePots{
+ constructor(){this.previous=new Map();}
+ reset(){this.previous.clear();}
+ step(key,value){
+  if(!Number.isInteger(value)||value<0||value>127)return 0;
+  const previous=this.previous.get(key);this.previous.set(key,value);
+  if(previous===undefined)return 0;
+  return Math.sign(value-previous)||(value===127?1:value===0?-1:0);
  }
 }

@@ -1,4 +1,4 @@
-import {SoundBrowser} from './sound-browser.js';
+import {SoundBrowser,RelativePots} from './sound-browser.js';
 import {LatencyStats} from './latency.js';
 import {PRESETS,Synth,loadInstrumentCatalog} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
@@ -10,6 +10,7 @@ let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
 const savedCatalogPreset=read('looper:catalog-preset',null)||read('looper:preset','piano');
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
+const relativePots=new RelativePots();
 let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{}),rememberedPages:read('looper:role-pages',{})});
 let soundTimer,shownRole,presetChanges=0;
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
@@ -76,12 +77,12 @@ function process(event,device){
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
  // Reserve pad notes 30..45 on channel 10 before MIDI learn and instrument playback.
  if((e.type==='on'||e.type==='off')&&e.channel===9&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
- // Fixed absolute pots and master slider precede learned mappings.
+ // Relative navigation pots and master slider precede learned mappings.
  if(e.type==='cc'&&e.channel===0){
   if(e.number===7){setVolume(e.value/127*100);return;}
-  if(e.number===14){if(soundBrowser.turnPage(e.value))queueSound();return;}
-  if(e.number===13){if(soundBrowser.turnRole(e.value))queueSound();return;}
-  if(e.number===15){if(soundBrowser.turnSound(e.value))queueSound();return;}
+  if(e.number===14){if(soundBrowser.step('page',relativePots.step(key,e.value)))queueSound();return;}
+  if(e.number===13){if(soundBrowser.step('role',relativePots.step(key,e.value)))queueSound();return;}
+  if(e.number===15){if(soundBrowser.step('sound',relativePots.step(key,e.value)))queueSound();return;}
  }
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
@@ -101,7 +102,7 @@ function process(event,device){
  }
 }
 function refreshInputs(){
- if(!access)return;const inputs=[...access.inputs.values()].filter(p=>p.state==='connected');
+ if(!access)return;relativePots.reset();const inputs=[...access.inputs.values()].filter(p=>p.state==='connected');
  if(!inputs.some(p=>p.id===selected)){panic();selected=inputs[0]?.id||'';}
  for(const input of access.inputs.values())input.onmidimessage=input.id===selected?e=>process(e,input.id):null;
  const select=$('#midi-input');select.replaceChildren();

@@ -8,7 +8,7 @@ El catálogo observado durante esta implementación contiene 862 presets/variant
 
 Los metadatos adicionales se consultan al abrir; el catálogo GM y los presets originales siguen disponibles si falla esa consulta. Ajustes → Sonidos y créditos muestra cantidad y fallos por familia, con botón Actualizar catálogo. No se instancia ni descarga audio al enumerar sonidos: solo al seleccionar uno con audio activado. Se serializan las cargas, se aborta la anterior y se libera el sampler anterior; no se acumulan bancos en RAM. No se encolan notas durante la carga.
 
-Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC14; CC15 recorre los sonidos de la página, todos alcanzables con valores 0–127 en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
+Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC14; CC15 recorre los sonidos de la página, todos alcanzables paso a paso en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
 
 Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
@@ -65,7 +65,7 @@ en varios roles sin duplicar sus muestras. Los bancos se distinguen en el nombre
 
 Cada categoría recuerda su página y cada página su último instrumento. Las seis categorías conservan su orden; las páginas se numeran consecutivamente dentro de cada categoría. El selector visual responde al pot
 inmediatamente; la carga se solicita tras 250 ms sin cambiar la selección.
-Hay un margen de un paso MIDI en los límites para evitar oscilaciones.
+La app interpreta los CC absolutos como navegación relativa: cada subida avanza una opción y cada bajada retrocede una. El primer mensaje de cada perilla/dispositivo establece la referencia. Repetir 0 sigue retrocediendo y repetir 127 sigue avanzando; otros valores repetidos se ignoran. Cada lista se detiene en sus extremos. Las referencias se reinician al actualizar o reconectar dispositivos. CC7 conserva el volumen absoluto.
 Solo se carga el instrumento elegido, conservando los loops.
 Los controles fijos tienen prioridad sobre el aprendizaje y las asignaciones
 antiguas; las asignaciones antiguas de volumen se ignoran. El slider de pantalla

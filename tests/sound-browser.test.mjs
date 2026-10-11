@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PRESETS} from '../public/instruments.js';
-import {SOUND_ROLES,SoundBrowser,potIndex,buildRoles} from '../public/sound-browser.js';
+import {SOUND_ROLES,SoundBrowser,RelativePots,potIndex,buildRoles} from '../public/sound-browser.js';
 test('roles cover the existing catalog, mix engines and share instruments without copying samples',()=>{
  const ids=new Set(PRESETS.map(p=>p.id));
  for(const role of SOUND_ROLES)for(const id of role.presets)assert.ok(ids.has(id),'unknown preset '+id);
@@ -47,4 +47,39 @@ test('category and page controls are independent, ordered and remember sounds ac
  restored.selectRole(0);assert.equal(restored.preset.id,last);assert.equal(restored.pageIndex,3);
  const legacy=new SoundBrowser(presets,{presetId:last,roleId:'rhythm:4',remembered:browser.remembered});
  assert.equal(legacy.role.id,'rhythm');assert.equal(legacy.pageIndex,3);assert.equal(legacy.preset.id,last);
+});
+
+test('relative navigation tracks each device/control, endpoints, reversals and reset',()=>{
+ const pots=new RelativePots();
+ assert.equal(pots.step('a13',12),0);
+ assert.equal(pots.step('a13',11),-1);
+ assert.equal(pots.step('a13',10),-1);
+ assert.equal(pots.step('a13',11),1);
+ assert.equal(pots.step('a13',11),0);
+ assert.equal(pots.step('a13',127),1);
+ assert.equal(pots.step('a13',127),1);
+ assert.equal(pots.step('a13',126),-1);
+ assert.equal(pots.step('a13',0),-1);
+ assert.equal(pots.step('a13',0),-1);
+ assert.equal(pots.step('a13',1),1);
+ assert.equal(pots.step('a14',127),0);assert.equal(pots.step('b13',50),0);
+ assert.equal(pots.step('a13',NaN),0);assert.equal(pots.step('a13',2),1);
+ pots.reset();assert.equal(pots.step('a13',127),0);
+});
+test('relative steps traverse all categories and every page/instrument without skipping or wrapping',()=>{
+ const b=new SoundBrowser(PRESETS,{presetId:'drums'}),seen=new Set();
+ for(let r=0;r<b.roles.length;r++){
+  assert.equal(b.roleIndex,r);b.selectPage(0);
+  for(let p=0;p<b.role.pages.length;p++){
+   assert.equal(b.pageIndex,p);b.choose(b.page.presets[0].id);
+   for(const preset of b.page.presets){assert.equal(b.preset.id,preset.id);seen.add(preset.id);b.step('sound',1);}
+   assert.equal(b.preset,b.page.presets.at(-1));
+   b.step('page',1);
+  }
+  b.step('role',1);
+ }
+ assert.equal(b.roleIndex,b.roles.length-1);
+ assert.deepEqual(seen,new Set(PRESETS.map(p=>p.id)));
+ b.selectRole(0);assert.equal(b.step('role',-1),false);
+ b.selectPage(0);assert.equal(b.step('page',-1),false);
 });
