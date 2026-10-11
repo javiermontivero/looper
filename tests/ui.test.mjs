@@ -30,7 +30,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   return e;
  });
  const actions=buttons.filter(b=>b.dataset.loopAction);
- assert.equal(actions.length,3);
+ assert.equal(actions.length,5);
  ids.get('track-0').localButtons=buttons.filter(b=>b.dataset.track==='0'||b.dataset.learn==='track0');
  const document={hidden:false,activeElement:null,
   querySelector:selector=>selector.startsWith('#')?(ids.get(selector.slice(1))||null):document.querySelectorAll(selector)[0]||null,
@@ -103,10 +103,15 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  core.process(new Float32Array(1000).fill(.25),new Float32Array(1000));publish();
  assert.equal(ids.get('track-0').querySelector('.track-state').textContent,'REC');
  await click('record',0);
- assert.equal(core.length,1000);assert.equal(core.tracks[0].hasAudio,true);
+ assert.equal(core.length,2000);assert.equal(core.tracks[0].hasAudio,true);
  assert.equal(ids.get('track-0').querySelector('[data-loop-action="record"]').textContent,'Overdub');
+ core.process(new Float32Array(1000),new Float32Array(1000));
  await click('record',0);core.process(new Float32Array(1000).fill(.25),new Float32Array(1000));await click('record',0);
  assert.equal(core.tracks[0].data[500],.5);
+ assert.equal(ids.get('track-0').querySelector('.track-length').textContent,'1 compás');
+ await click('lengthen',0);assert.equal(core.tracks[0].pendingBars,2);
+ assert.equal(ids.get('track-0').querySelector('.track-length').textContent,'1 → 2 compases');
+ await click('shorten',0);assert.equal(core.tracks[0].pendingBars,0);
  await click('mute',0);assert.equal(core.tracks[0].muted,true);
  await click('mute',0);assert.equal(core.tracks[0].muted,false);
  for(let i=1;i<16;i++){
@@ -114,12 +119,13 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   assert.equal(core.tracks.length,i+1);
  }
  assert.equal(ids.get('add-track').disabled,true);
+ core.process(new Float32Array(1000),new Float32Array(1000));
  await click('record',15);core.process(new Float32Array(1300).fill(.1),new Float32Array(1300));
- await click('record',15);assert.equal(core.tracks[15].length,1300);assert.equal(core.length,1300);
+ await click('record',15);assert.equal(core.tracks[15].audioLength,1300);assert.equal(core.length,2000);
  ids.get('tempo').onchange({target:{value:'180'}});assert.equal(core.speed,1.5);
  ids.get('tempo').value='19';publish();assert.equal(ids.get('tempo').value,'19');
  await click('record',0);assert.equal(ids.get('tempo').disabled,true);await click('record',0);assert.equal(ids.get('tempo').disabled,false);
- await click('clear',15);assert.equal(core.length,1000);
+ await click('clear',15);assert.equal(core.length,2000);
  core.process(new Float32Array(10),new Float32Array(10));
  const midi=value=>globals.process({data:[0x90,33,value]},'keyboard');
  const flush=()=>new Promise(setImmediate);

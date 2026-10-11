@@ -195,7 +195,7 @@ function renderLoop(state){
 
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i];
-  const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';
+  const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.pendingBars?t.bars+' → '+t.pendingBars:t.bars)+(t.bars===1&&!t.pendingBars?' compás':' compases'):'';
   if(label.textContent!==text)label.textContent=text;
  }
  if(state.revision===lastLoopRevision)return;
@@ -214,6 +214,11 @@ function renderLoop(state){
   record.textContent=state.pending===i?'Cancelar':state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
   record.setAttribute('aria-pressed',String(state.active===i||state.pending===i));
   mute.textContent=t.muted?'▶':'■';mute.disabled=!t.hasAudio;mute.setAttribute('aria-pressed',String(!t.muted&&t.hasAudio));
+  const shorter=row.querySelector('[data-loop-action="shorten"]'),longer=row.querySelector('[data-loop-action="lengthen"]');
+  shorter.disabled=!t.hasAudio||active||pending||(t.pendingBars||t.bars)<=1;
+  longer.disabled=!t.hasAudio||active||pending||(t.pendingBars||t.bars)>=128;
+  record.disabled=t.hasAudio&&t.canOverdub===false||state.tracks.some(track=>track.pendingBars);
+  record.title=t.canOverdub===false?'Acortá el ciclo a 60 s o menos para overdub':'';
   clear.disabled=!t.hasAudio&&state.active!==i&&state.pending!==i;
  }
  if(state.message&&state.revision!==lastLoopMessage){notice(state.message);lastLoopMessage=state.revision;}
@@ -232,7 +237,7 @@ function syncTracks(count){
  while(trackCount<count){
   const i=trackCount++,row=document.createElement('article');
   row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackNotes[i]-29));
-  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">Nota 30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('Nota 30','Nota '+trackNotes[i]).replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace(/Pista 1/g,'Pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
+  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">Nota 30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div><div class=\"track-duration\"><button data-loop-action=\"shorten\" data-track=\"0\" aria-label=\"Acortar ciclo de pista 1\" disabled>‹</button><span class=\"track-length\" aria-label=\"Duración de la pista\"></span><button data-loop-action=\"lengthen\" data-track=\"0\" aria-label=\"Alargar ciclo de pista 1\" disabled>›</button></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('Nota 30','Nota '+trackNotes[i]).replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace(/Pista 1/g,'Pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
   $('#tracks').append(row);bindTrack(row);
  }
  while(trackCount>count){$('#track-'+(--trackCount)).remove();}

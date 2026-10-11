@@ -1,112 +1,117 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {LoopCore} from '../public/loop-core.js';
-const core=()=>new LoopCore(1000,{maxSeconds:2,minSeconds:.004,countInBeats:0});
+const core=()=>new LoopCore(1000,{maxSeconds:60,minSeconds:.004,countInBeats:0});
 function prepare(c,i){while(c.tracks.length<=i)c.command({type:'add'});c.command({type:'prepare',track:i,data:new Float32Array(c.capacity)});}
 function run(c,input){const output=new Float32Array(input.length);c.process(input,output);return [...output];}
-function record(c,i,samples){prepare(c,i);c.command({type:'record',track:i});if(c.pending>=0)run(c,Array(Math.ceil((c.length-c.position)/c.speed)).fill(0));run(c,samples);c.command({type:'stop'});}
-test('one empty track initially, add up to sixteen without allocating audio',()=>{
- const c=core();assert.equal(c.tracks.length,1);
- for(let i=0;i<30;i++)c.command({type:'add'});
+function advance(c,n,value=0){while(n>0){const size=Math.min(n,128);c.process(new Float32Array(size).fill(value),new Float32Array(size));n-=size;}}
+function waitStart(c){if(c.pending>=0)advance(c,Math.ceil((c.pendingAt-c.transport-1e-7)/c.speed));}
+function record(c,i,samples){prepare(c,i);c.command({type:'record',track:i});waitStart(c);run(c,samples);c.command({type:'stop'});}
+test('dynamic tracks and buffer allocation remain lazy',()=>{
+ const c=core();for(let i=0;i<30;i++)c.command({type:'add'});
  assert.equal(c.tracks.length,16);assert.ok(c.tracks.every(t=>t.data===null));
- record(c,15,Array(8).fill(.1));assert.equal(c.tracks[15].hasAudio,true);
- c.command({type:'reset'});assert.equal(c.tracks.length,1);assert.equal(c.tracks[0].data,null);
+ record(c,15,Array(8).fill(.1));assert.equal(c.tracks[15].bars,1);
+ c.command({type:'reset'});assert.equal(c.tracks.length,1);assert.equal(c.transport,0);
 });
-test('fixed eight-bar guide follows BPM independently of first take duration',()=>{
- const c=core();assert.equal(c.state().baseSeconds,16);
- c.command({type:'tempo',value:60});assert.equal(c.state().baseSeconds,32);
- record(c,0,Array(10).fill(.2));assert.equal(c.length,10);assert.equal(c.baseLength,32000);
- c.command({type:'tempo',value:120});assert.equal(c.state().baseSeconds,16);assert.equal(c.length,10);
+test('capture stops immediately, cycle rounds upward, silence is virtual',()=>{
+ const c=core();record(c,0,Array(14000).fill(.25));const t=c.tracks[0];
+ assert.equal(t.audioLength,14000);assert.equal(t.bars,8);assert.equal(t.length,16000);
+ assert.equal(c.position,14000);assert.equal(c.active,-1);
+ assert.ok(run(c,Array(2000).fill(.9)).every(x=>x===0));
+ assert.equal(t.audioLength,14000);assert.equal(c.position,0);
 });
-test('take closes at its exact duration after recording starts',()=>{
- const c=core();record(c,0,[1,2,3,4,5,6,7,8]);
- assert.equal(c.length,8);assert.equal(c.position,0);assert.equal(c.active,-1);
- assert.deepEqual([...c.tracks[0].data.slice(0,8)],[1,2,3,4,5,6,7,8]);
+test('shorten and lengthen are reversible and apply only on common boundaries',()=>{
+ const c=core();record(c,0,Array(14000).fill(.25));const t=c.tracks[0],buffer=t.data;
+ c.command({type:'shorten',track:0});assert.equal(t.pendingBars,4);assert.equal(t.bars,8);
+ advance(c,1999);assert.equal(t.bars,8);advance(c,1);assert.equal(t.bars,4);
+ c.command({type:'shorten',track:0});assert.equal(t.bars,2);
+ c.command({type:'lengthen',track:0});assert.equal(t.bars,4);
+ c.command({type:'lengthen',track:0});assert.equal(t.bars,8);
+ assert.equal(t.data,buffer);assert.equal(t.audioLength,14000);assert.equal(t.data[13000],.25);
+ c.command({type:'lengthen',track:0});assert.equal(t.pendingBars,16);
+ advance(c,16000);assert.equal(t.bars,16);assert.equal(t.length,32000);assert.equal(t.data,buffer);
+ advance(c,20000);assert.ok(run(c,Array(100).fill(0)).every(x=>x===0));
+ c.command({type:'clear',track:0});assert.equal(c.tracks[0].data,null);
 });
-test('armed take waits for longest loop boundary and ignores input until then',()=>{
- const c=core();record(c,0,Array(8).fill(0));run(c,[0,0,0]);prepare(c,1);
- c.command({type:'record',track:1});assert.equal(c.pending,1);assert.equal(c.active,-1);
- run(c,[9,9,9,9,9]);assert.equal(c.active,1);assert.equal(c.captured,0);
- run(c,[1,2,3,4,5,6,7,8,1,2,3]);assert.equal(c.active,1,'does not auto close at old loop end');
- c.command({type:'stop'});assert.equal(c.active,-1);assert.equal(c.length,11);
- assert.deepEqual([...c.tracks[1].data.slice(0,11)],[1,2,3,4,5,6,7,8,1,2,3]);
- assert.equal(c.tracks[0].length,8);assert.equal(c.tracks[0].position,3);
- assert.equal(c.position,0);
+test('queued duration can be cancelled and pause freezes its boundary',()=>{
+ const c=core();record(c,0,Array(1000).fill(.1));const t=c.tracks[0];
+ c.command({type:'lengthen',track:0});c.command({type:'shorten',track:0});assert.equal(t.pendingBars,0);
+ c.command({type:'lengthen',track:0});c.command({type:'pause'});const now=c.transport;
+ advance(c,10000);assert.equal(c.transport,now);assert.equal(t.bars,1);
+ c.command({type:'resume'});advance(c,3000);assert.equal(t.bars,2);
 });
-test('second take closes immediately mid-cycle without padding',()=>{
- const c=core();record(c,0,Array(20).fill(.2));record(c,1,Array(7).fill(.3));
- assert.equal(c.active,-1);assert.equal(c.tracks[1].length,7);assert.equal(c.length,20);
- assert.equal(c.position,7);assert.equal(c.tracks[1].position,0);
+test('growing a new take keeps shorter tracks phase aligned even from an odd old cycle',()=>{
+ const c=core();record(c,0,Array(1900).fill(.2));
+ prepare(c,1);c.command({type:'record',track:1});assert.equal(c.pending,1);
+ advance(c,100,9);assert.equal(c.active,1);assert.equal(c.captured,0);
+ advance(c,3900,.3);assert.equal(c.active,1);c.command({type:'stop'});
+ assert.equal(c.length,4000);assert.equal(c.tracks[1].bars,2);assert.equal(c.position,3900);
+ assert.equal(c.tracks[0].position,1900);advance(c,100);
+ assert.equal(c.position,0);assert.ok(c.tracks.every(t=>t.position===0));
 });
-test('armed take can cancel; pause and clear cannot start it later',()=>{
- const c=core();record(c,0,Array(20).fill(.2));run(c,[0,0]);prepare(c,1);
+test('overdub affects selected window while hidden original audio survives',()=>{
+ const c=core();record(c,0,Array(14000).fill(.25));advance(c,2000);
+ c.command({type:'shorten',track:0});c.command({type:'shorten',track:0});assert.equal(c.tracks[0].bars,2);
+ record(c,0,Array(4000).fill(.25));
+ assert.equal(c.tracks[0].data[2000],.5);assert.equal(c.tracks[0].data[13000],.25);
+ assert.equal(c.tracks[0].audioLength,14000);
+ c.command({type:'lengthen',track:0});advance(c,4000);c.command({type:'lengthen',track:0});
+ advance(c,8000);assert.equal(c.tracks[0].bars,8);advance(c,13000);
+ assert.ok(Math.abs(run(c,[0])[0]-.25)<1e-6);
+});
+test('shared clock survives thousands of cycles, fractional BPM, mute and tempo changes',()=>{
+ const c=new LoopCore(100,{maxSeconds:60,minSeconds:.01,countInBeats:0});
+ c.command({type:'tempo',value:137});
+ record(c,0,Array(150).fill(.1));record(c,1,Array(300).fill(.2));
+ for(const bpm of [137,83,219]){
+  c.command({type:'tempo',value:bpm});
+  for(let i=0;i<2000;i++){
+   advance(c,97);
+   for(const t of c.tracks)assert.equal(t.position,c.phase(t.length));
+   assert.ok(Math.abs(c.tracks[1].position%c.tracks[0].length-c.tracks[0].position)<1e-7);
+  }
+ }
+ c.command({type:'mute',track:0});advance(c,1000);c.command({type:'mute',track:0});
+ assert.equal(c.tracks[0].position,c.phase(c.tracks[0].length));
+ const pos=c.transport;c.command({type:'pause'});advance(c,100);assert.equal(c.transport,pos);
+});
+test('pending recording cancels, tempo locks, clear releases data, max capture is bounded',()=>{
+ const c=core();record(c,0,Array(1000).fill(.2));prepare(c,1);
  for(const type of ['record','pause','clear']){
   c.command({type:'record',track:1});assert.equal(c.pending,1);
-  c.command({type,track:1});assert.equal(c.pending,-1);assert.equal(c.active,-1);
+  c.command({type:'tempo',value:60});assert.equal(c.bpm,120);
+  c.command({type,track:1});assert.equal(c.pending,-1);
   c.command({type:'resume'});prepare(c,1);
  }
- run(c,Array(20).fill(0));assert.equal(c.active,-1);
+ record(c,1,Array(c.capacity+5).fill(.2));assert.equal(c.active,-1);
+ assert.equal(c.tracks[1].audioLength,c.capacity);assert.equal(c.tracks[1].bars,32);
+ assert.ok(c.tracks[1].data.every(Number.isFinite));
+ c.command({type:'record',track:1});assert.equal(c.pending,-1,'oversized silent cycles explain overdub limit');
+ c.command({type:'clear',track:1});assert.equal(c.length,2000);
 });
-test('overdub also waits for boundary and never captures playback',()=>{
- const c=core();record(c,0,Array(8).fill(.25));run(c,[0,0,0]);
- c.command({type:'record',track:0});run(c,Array(5).fill(7));
- run(c,[.25,.5]);c.command({type:'stop'});
- assert.equal(c.tracks[0].data[0],.5);assert.equal(c.tracks[0].data[1],.75);
- assert.equal(c.tracks[0].data[2],.25);assert.equal(c.position,2);
+test('resize guards recording, supports cancellation and clamps at 1 and 128 bars',()=>{
+ const c=core();record(c,0,Array(2000).fill(.1));
+ c.command({type:'record',track:0});c.command({type:'lengthen',track:0});assert.equal(c.tracks[0].pendingBars,0);c.command({type:'stop'});
+ for(let i=0;i<20;i++){c.command({type:'lengthen',track:0});if(c.tracks[0].pendingBars)advance(c,Math.ceil((c.tracks[0].changeAt-c.transport)/c.speed));}
+ assert.equal(c.tracks[0].bars,128);
+ for(let i=0;i<20;i++)c.command({type:'shorten',track:0});
+ assert.equal(c.tracks[0].bars,1);
+ c.command({type:'lengthen',track:0});c.command({type:'clear',track:0});advance(c,10000);assert.equal(c.length,0);
 });
-test('muting is phase-preserving and does not suppress active overdub',()=>{
- const c=core();record(c,0,Array(20).fill(.1));c.command({type:'record',track:0});
- c.command({type:'mute',track:0});run(c,Array(20).fill(.1));c.command({type:'stop'});
- assert.ok(Math.abs(c.tracks[0].data[10]-.2)<1e-6);assert.equal(c.tracks[0].position,0);
- assert.ok(run(c,Array(10).fill(0)).every(x=>x===0));
- c.command({type:'mute',track:0});run(c,Array(5).fill(0));assert.equal(c.tracks[0].position,15);
-});
-test('clearing longest recalculates song duration and releases its buffer',()=>{
- const c=core();record(c,0,Array(8).fill(.1));record(c,1,Array(13).fill(.2));
- assert.equal(c.length,13);c.command({type:'clear',track:1});assert.equal(c.length,8);
- assert.equal(c.tracks[1].data,null);c.command({type:'clear',track:0});assert.equal(c.length,0);
- assert.equal(c.state().baseSeconds,16);
-});
-test('short take rejected and maximum capture stops without overflow',()=>{
- const c=core();record(c,0,[1]);assert.equal(c.length,0);assert.equal(c.tracks[0].hasAudio,false);
- record(c,0,Array(8).fill(.1));record(c,1,Array(c.capacity+5).fill(.2));
- assert.equal(c.length,c.capacity);assert.equal(c.active,-1);assert.equal(c.tracks[1].data.length,c.capacity);
-});
-test('fractional tempo capture and overdub preserve signal gain and immediate close',()=>{
+test('new capture and overdub at changed tempo preserve amplitude',()=>{
  for(const bpm of [60,180,240]){
-  const c=core();record(c,0,Array(12).fill(.2));c.command({type:'tempo',value:bpm});
-  record(c,0,Array(12/(bpm/120)).fill(.1));
-  assert.ok(c.tracks[0].data.slice(0,12).every(x=>Math.abs(x-.3)<1e-6));
-  record(c,1,Array(24/(bpm/120)).fill(.25));assert.equal(c.length,24);
-  assert.ok(c.tracks[1].data.slice(0,24).every(x=>x===.25));
+  const c=core();record(c,0,Array(2000).fill(.2));c.command({type:'tempo',value:bpm});
+  record(c,0,Array(Math.ceil(2000/c.speed)).fill(.1));
+  assert.ok(c.tracks[0].data.slice(10,1990).every(v=>Math.abs(v-.3)<1e-6));
+  record(c,1,Array(Math.ceil(4000/c.speed)).fill(.25));
+  assert.ok(c.tracks[1].data.slice(10,3990).every(v=>Math.abs(v-.25)<1e-6));
  }
 });
-test('tempo resampling and phase continue for short tracks',()=>{
- const c=core();record(c,0,[0,0,0,1,2,3,4,5,6,7,0,0]);c.command({type:'tempo',value:60});
- const out=run(c,Array(10).fill(0));assert.equal(out[7],1.5);assert.equal(out[8],2);
- c.command({type:'pause'});run(c,[0,0]);assert.equal(c.position,5);c.command({type:'resume'});run(c,[0]);assert.equal(c.position,5.5);
-});
-test('tempo validates and locks during armed and active recording',()=>{
- const c=core();record(c,0,Array(8).fill(.2));run(c,[0]);
- prepare(c,1);c.command({type:'record',track:1});c.command({type:'tempo',value:60});assert.equal(c.bpm,120);
- run(c,Array(7).fill(0));c.command({type:'tempo',value:60});assert.equal(c.bpm,120);
- run(c,Array(4).fill(.2));c.command({type:'stop'});
+test('invalid input and tiny takes cannot corrupt stored audio',()=>{
+ const c=core();record(c,0,[NaN]);assert.equal(c.length,0);
+ record(c,0,[NaN,Infinity,0,0]);assert.ok(c.tracks[0].data.every(Number.isFinite));
  for(const value of [NaN,Infinity,0,300,'120'])c.command({type:'tempo',value});
- assert.equal(c.bpm,120);
-});
-test('MIDI trigger starts, closes immediately, mutes; clear discards take',()=>{
- const c=core();prepare(c,0);c.command({type:'trigger',track:0});run(c,Array(20).fill(.2));
- c.command({type:'trigger',track:0});c.command({type:'trigger',track:0});assert.equal(c.tracks[0].muted,true);
- run(c,Array(3).fill(0));c.command({type:'trigger',track:0});assert.equal(c.tracks[0].position,3);
- prepare(c,1);c.command({type:'trigger',track:1});c.command({type:'clear',track:1});
- assert.equal(c.pending,-1);assert.equal(c.tracks[1].data,null);
-});
-test('malformed input stays finite and first take cannot be silently replaced',()=>{
- const c=core();prepare(c,0);prepare(c,1);c.command({type:'record',track:0});run(c,[NaN,Infinity,0,0]);
- c.command({type:'record',track:1});assert.equal(c.active,0);
- c.command(null);c.command({type:'record',track:16});c.command({type:'stop'});
- c.command({type:'record',track:0});c.process(undefined,new Float32Array(8));c.command({type:'stop'});
- assert.ok(c.tracks[0].data.every(Number.isFinite));
+ assert.equal(c.bpm,120);c.command(null);c.command({type:'record',track:16});
 });
 function clickStarts(c,samples,chunk=128){
  const output=[];let remaining=samples;
@@ -144,7 +149,7 @@ test('clearing the last recorded track while another is armed starts a free take
  const c=core();record(c,0,Array(8).fill(.2));run(c,[0]);prepare(c,1);
  c.command({type:'record',track:1});c.command({type:'clear',track:0});
  assert.equal(c.pending,-1);assert.equal(c.active,1);run(c,Array(7).fill(.3));c.command({type:'stop'});
- assert.equal(c.length,7);assert.equal(c.tracks[1].hasAudio,true);
+ assert.equal(c.tracks[1].audioLength,7);assert.equal(c.tracks[1].hasAudio,true);
 });
 
 test('first take counts exactly eight beats at the selected BPM without capturing input',()=>{
@@ -161,9 +166,9 @@ test('first take counts exactly eight beats at the selected BPM without capturin
   run(c,[.9]);assert.equal(c.active,0);assert.equal(c.captured,0);
   assert.equal(c.countInRemaining,0);assert.equal(c.metronome,false);
   run(c,Array(2000).fill(.25));c.command({type:'stop'});
-  assert.equal(c.length,2000);assert.ok(c.tracks[0].data.slice(0,2000).every(x=>x===.25));
+  assert.equal(c.tracks[0].audioLength,2000);assert.ok(c.tracks[0].data.slice(0,2000).every(x=>x===.25));
   prepare(c,1);c.command({type:'record',track:1});
-  assert.equal(c.active,1,'subsequent take at loop start has no count-in');
+  assert.equal(c.pending,1,'subsequent take waits for the padded cycle');
   assert.equal(c.countInRemaining,0);
  }
 });
@@ -183,4 +188,24 @@ test('count-in metronome stays on if enabled and toggling it does not restart th
  run(c,Array(remaining).fill(0));assert.equal(c.metronome,true);assert.equal(c.active,0);
  assert.ok(run(c,Array(200).fill(0)).some(x=>Math.abs(x)>1e-5));
  assert.ok(c.tracks[0].data.every(x=>x===0));
+});
+
+test('fractional bar endings round to the intended cycle, and repeated expansion keeps the origin aligned',()=>{
+ const c=new LoopCore(1000,{countInBeats:0});c.command({type:'tempo',value:137});
+ record(c,0,Array(Math.ceil(c.barLength)).fill(.1));assert.equal(c.tracks[0].bars,1);
+ for(let i=1;i<=3;i++){
+  record(c,i,Array(Math.ceil(c.barLength*2**i)).fill(.2));
+  assert.equal(c.tracks[i].bars,2**i);
+  const short=c.phase(c.tracks[0].length);
+  for(const t of c.tracks)assert.ok(Math.abs(c.phase(t.length)%c.tracks[0].length-short)<1e-6);
+ }
+});
+test('audible impulses from short and long tracks coincide every shared cycle',()=>{
+ const c=core(),short=new Float32Array(1900),long=new Float32Array(3900);
+ short[20]=.25;long[20]=.5;record(c,0,short);record(c,1,long);advance(c,100);
+ const output=run(c,new Float32Array(4000*1000));
+ for(let cycle=0;cycle<1000;cycle++){
+  assert.equal(output[cycle*4000+20],.75);
+  assert.equal(output[cycle*4000+2020],.25);
+ }
 });
