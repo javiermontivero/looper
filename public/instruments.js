@@ -1,3 +1,4 @@
+import {soundfonts,discoverCatalog,FAMILIES,mapDrumGroups} from './catalog.js';
 import {PRESETS as FM_PRESETS,Synth as FMSynth,playableVelocity} from './synth.js';
 export const SAMPLES=[
  {id:'piano',name:'Piano acústico',category:'Instrumentos',engine:'piano'},
@@ -8,8 +9,21 @@ export const SAMPLES=[
  {id:'drums',name:'Batería acústica',category:'Instrumentos',engine:'drums'},
  {id:'marimba',name:'Marimba / percusión',category:'Instrumentos',engine:'soundfont',instrument:'marimba'}
 ];
+SAMPLES.push(...soundfonts(SAMPLES),{id:'tabla',name:'Tabla india',category:'Instrumentos',engine:'soundfont',instrument:'synth_drum',kit:'Tabla',roles:['rhythm'],percussion:true});
 export const PRESETS=[...SAMPLES,...FM_PRESETS.map(p=>({...p,category:'Sinte FM'}))];
-const importSmplr=()=>import('https://cdn.jsdelivr.net/npm/smplr@1.1.0/dist/index.mjs');
+export const importSmplr=()=>import('https://cdn.jsdelivr.net/npm/smplr@1.1.0/dist/index.mjs');
+
+let catalogLoading;
+export function loadInstrumentCatalog(loadLibrary=importSmplr){
+ if(catalogLoading)return catalogLoading;
+ catalogLoading=(async()=>{
+  const lib=await loadLibrary(),result=await discoverCatalog(lib,PRESETS);
+  const ids=new Set(PRESETS.map(p=>p.id)),added=result.presets.filter(p=>!ids.has(p.id));
+  SAMPLES.push(...added);PRESETS.push(...added);
+  return {added:added.length,issues:result.issues,count:PRESETS.length};
+ })().finally(()=>{catalogLoading=null;});
+ return catalogLoading;
+}
 
 const DRUM_BASE='https://smpldsnds.github.io/hydrogen-drum-samples/';
 export const DRUM_NOTES={
@@ -36,7 +50,7 @@ export class Synth extends FMSynth{
  }
  async selectPreset(p){
   const selection=++this.selection;this.panic();this.preset=p;
-  this.controller?.abort();this.sampler?.dispose();this.sampler=null;
+  this.controller?.abort();this.sampler?.dispose();this.sampler=null;this.drumMap=null;
   if(!p.engine){this.ready=true;this.onStatus('');return true;}
   this.ready=false;this.onStatus('Cargando '+p.name+'…');
   // Serialize loading to avoid decoding several instruments at once on mobile.
@@ -60,10 +74,20 @@ export class Synth extends FMSynth{
     else if(p.engine==='drums')instrument=lib.Sampler(this.context,{...options,
      preset:{samples:{baseUrl:DRUM_BASE,formats:['ogg','m4a'],map:DRUM_FILES},defaults:{loop:false,ampRelease:0.02},
       groups:[{regions:Object.entries(DRUM_NOTES).map(([key,sample])=>({sample,keyRange:[Number(key),Number(key)],pitch:Number(key)}))}]}});
-    else instrument=lib.Soundfont(this.context,{...options,instrument:p.instrument,kit:'FluidR3_GM'});
+    else if(p.engine==='soundfont')instrument=lib.Soundfont(this.context,{...options,instrument:p.instrument,kit:p.kit||'FluidR3_GM'});
+    else{
+     const factory=FAMILIES.find(f=>f.engine===p.engine)?.factory;
+     if(!factory||typeof lib[factory]!=='function')throw Error('Instrumento no soportado');
+     instrument=lib[factory](this.context,{...options,...(p.engine==='abuse'?{source:{kind:'machine',machine:p.instrument}}:{instrument:p.instrument})});
+    }
     this.sampler=instrument;
     await instrument.ready;
     if(selection!==this.selection){instrument.dispose();return false;}
+    if(['machine','abuse'].includes(p.engine)){
+     const groups=instrument.getGroupNames?.()||instrument.getSampleNames?.()||[];
+     this.drumMap=mapDrumGroups(groups);
+     if(!Object.keys(this.drumMap).length)throw Error('Kit vacío');
+    }
     this.ready=true;this.onStatus('');return true;
    }catch(error){
     instrument?.dispose();
@@ -77,14 +101,16 @@ export class Synth extends FMSynth{
   if(!this.ready)return; // Never queue notes to sound unexpectedly after a download.
   if(!this.preset.engine)return super.noteOn(key,note,velocity,channel);
   velocity=playableVelocity(velocity);if(!velocity){this.noteOff(key);return;}
-  const drum=this.preset.engine==='drums'?drumForNote(note):null;
-  if(this.preset.engine==='drums'){
+  const namedKit=['machine','abuse'].includes(this.preset.engine);
+  const percussion=this.preset.engine==='drums'||namedKit||this.preset.percussion;
+  const drum=this.preset.engine==='drums'?drumForNote(note):namedKit?this.drumMap?.[note]:this.preset.percussion&&note>=60&&note<=88?'tabla':null;
+  if(percussion){
    if(!drum)return;
-   if(['closed','pedal','open'].includes(drum)){
-    for(const [oldKey,v] of this.sampleVoices)if(v.channel===channel&&['closed','pedal','open'].includes(v.drum))this.stopSample(oldKey);
+   if(['closed','pedal','open'].includes(drum)||/hat|^chh$|^ohh$/i.test(drum)){
+    for(const [oldKey,v] of this.sampleVoices)if(v.channel===channel&&(['closed','pedal','open'].includes(v.drum)||/hat|^chh$|^ohh$/i.test(v.drum||'')))this.stopSample(oldKey);
    }
    // Each drum hit owns a voice; releasing/retriggering the pad preserves its tail.
-   key='drum:'+ ++this.serial;note=note>=60&&note<=83?note-24:note;
+   key='drum:'+ ++this.serial;note=this.preset.engine==='drums'?(note>=60&&note<=83?note-24:note):namedKit?drum:note;
   }
   this.stopSample(key);
   if(this.sampleVoices.size>=24)this.stopSample(this.sampleVoices.keys().next().value);

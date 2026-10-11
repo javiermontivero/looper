@@ -1,6 +1,6 @@
 import {SoundBrowser} from './sound-browser.js';
 import {LatencyStats} from './latency.js';
-import {PRESETS,Synth} from './instruments.js';
+import {PRESETS,Synth,loadInstrumentCatalog} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -8,9 +8,10 @@ const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fa
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
 let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
+const savedCatalogPreset=read('looper:catalog-preset',null)||read('looper:preset','piano');
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
-const soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{})});
-let soundTimer,shownRole;
+let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{})});
+let soundTimer,shownRole,presetChanges=0;
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latencyStats=new LatencyStats();
 let directMidiClick=false;
@@ -46,10 +47,11 @@ function renderSoundChoice(){
  $('#sound').value=soundBrowser.preset.id;
 }
 function setPreset(p){
+ presetChanges++;
  clearTimeout(soundTimer);soundTimer=null;
  const changed=preset.id!==p.id;preset=p;soundBrowser.choose(p.id);
  if(synth&&changed)synth.selectPreset(p);
- renderSoundChoice();save('looper:preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
+ renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
 }
 function queueSound(){
  renderSoundChoice();clearTimeout(soundTimer);
@@ -265,6 +267,27 @@ $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);
 $('#settings-open').onclick=()=>$('#settings').showModal();
 $('#settings-close').onclick=()=>$('#settings').close();
 setPreset(preset);setVolume(volume);renderMappings();
+let catalogBusy=false;
+async function refreshCatalog(){
+ if(catalogBusy)return;catalogBusy=true;
+ const before=presetChanges,savedId=presetChanges<=1?savedCatalogPreset:preset.id;
+ $('#catalog-retry').disabled=true;$('#catalog-status').textContent='Consultando catálogo…';
+ try{
+  const result=await loadInstrumentCatalog();
+  const wanted=soundTimer?soundBrowser.preset:presetChanges===before?PRESETS.find(p=>p.id===savedId)||preset:preset;
+  const remembered={...read('looper:role-presets',{}),...soundBrowser.remembered};
+  soundBrowser=new SoundBrowser(PRESETS,{presetId:wanted.id,roleId:soundBrowser.role.id,remembered});
+  $('#sound-role').replaceChildren();
+  for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
+  shownRole=null;setPreset(wanted);
+  $('#catalog-status').textContent=PRESETS.length+' sonidos · '+(result.issues.length?result.issues.join(' · '):'Catálogo completo de esta versión.');
+ }catch{
+  $('#catalog-status').textContent=PRESETS.length+' sonidos disponibles. No se pudo consultar el catálogo adicional; podés reintentar.';
+ }finally{catalogBusy=false;$('#catalog-retry').disabled=false;}
+}
+$('#catalog-retry').onclick=refreshCatalog;
+refreshCatalog();
+
 renderLoop({length:0,position:0,seconds:0,elapsed:0,active:-1,paused:false,revision:0,message:'',tracks:Array.from({length:1},()=>({hasAudio:false,muted:false,mode:'empty'}))});
 if(!window.isSecureContext)notice('Abrí la dirección HTTPS para usar MIDI y grabar.');
 if(window.isSecureContext&&navigator.permissions){navigator.permissions.query({name:'midi',sysex:false}).then(p=>{if(p.state==='granted')connect();}).catch(()=>{});}

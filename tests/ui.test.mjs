@@ -64,11 +64,11 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout:(fn,ms)=>{if(ms===250){const id=++soundTimerId;soundTimers.set(id,fn);return id;}return setTimeout(fn,ms);},clearTimeout:id=>{if(soundTimers.has(id))soundTimers.delete(id);else clearTimeout(id);},performance,
-  AudioContext,Synth,PRESETS,SoundBrowser,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
+  AudioContext,Synth,PRESETS,loadInstrumentCatalog:async()=>({added:0,issues:[]}),SoundBrowser,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
- assert.equal(ids.get('sound-role').children.length,6,'six musical roles');
+ assert.equal(ids.get('sound-role').children.length,new SoundBrowser(PRESETS).roles.length,'musical roles with pages');
  assert.equal(ids.get('sound-role').value,'accompaniment');
- assert.equal(ids.get('sound').children.length,6,'sound dropdown shows only the current role');
+ assert.equal(ids.get('sound').children.length,new SoundBrowser(PRESETS,{presetId:'piano'}).role.presets.length,'sound dropdown shows only the current role page');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const sendPad=(number,value,status=0x90,device='keyboard')=>globals.process({data:[status,number,value]},device);
  const settle=()=>new Promise(setImmediate);
@@ -185,14 +185,14 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  cc(7,64);assert.equal(ids.get('volume').value,50);assert.equal(masterGain,.5);
  cc(7,0,0xb1);assert.equal(masterGain,.5,'fixed slider only listens on channel 1');
  const before=loaded.length;
- cc(13,30);assert.equal(ids.get('sound-role').value,'bass');
- cc(14,127);assert.equal(ids.get('sound').value,'rubber');
+ cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.equal(ids.get('sound-role').value,'bass');
+ cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).role.presets.length));assert.equal(ids.get('sound').value,'rubber');
  assert.equal(loaded.length,before,'pot movements do not start immediate sample loads');
  assert.equal(soundTimers.size,1);loadSelected();
  assert.equal(loaded.at(-1),'rubber');assert.equal(loaded.length,before+1);
- cc(14,127);assert.equal(soundTimers.size,0,'duplicate values do not reload the sound');
- cc(13,127);cc(14,0);loadSelected();assert.equal(loaded.at(-1),'marimba');
- cc(13,30);assert.equal(ids.get('sound').value,'rubber','role remembers its last variant');loadSelected();
+ cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).role.presets.length));assert.equal(soundTimers.size,0,'duplicate values do not reload the sound');
+ cc(13,Math.floor(5.5*128/new SoundBrowser(PRESETS).roles.length));cc(14,0);loadSelected();assert.equal(loaded.at(-1),'marimba');
+ cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.equal(ids.get('sound').value,'rubber','role remembers its last variant');loadSelected();
  assert.equal(loaded.at(-1),'rubber');
  assert.equal(core.length,recordedLength,'instrument and master changes preserve recorded loops');
  const beforeCancel=loaded.length;
@@ -204,7 +204,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  ids.get('sound').onchange({target:{value:'guitar'}});
  assert.equal(ids.get('sound').value,'guitar');assert.equal(loaded.at(-1),'guitar');
  const learn=buttons.find(b=>b.dataset.learn==='previous');learn.onclick();
- cc(13,30);assert.ok(ids.get('learn-status').textContent.startsWith('Pulsá'),'fixed pots cannot be reassigned by learn');
+ cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.ok(ids.get('learn-status').textContent.startsWith('Pulsá'),'fixed pots cannot be reassigned by learn');
  cc(7,127);assert.equal(masterGain,1);learn.onclick();
  loadSelected();
 

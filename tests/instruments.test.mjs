@@ -8,11 +8,11 @@ function setup(){
  const context={currentTime:5,createGain:()=>new Node(),createWaveShaper:()=>new Node(),destination:{}};
  const instances=[],statuses=[];
  function factory(ctx,options){
-  let resolve,reject;const instance={options,events:[],disposed:false,stops:0,ready:new Promise((a,b)=>{resolve=a;reject=b;}),
+  let resolve,reject;const instance={options,events:[],disposed:false,stops:0,getGroupNames:()=>['kick','snare','closed-hihat','open-hihat'],ready:new Promise((a,b)=>{resolve=a;reject=b;}),
    start(event){this.events.push(event);return ()=>{this.stops++;};},stop(){this.stops++;},dispose(){this.disposed=true;},resolve:()=>resolve(),reject:()=>reject(Error('network'))};
   instances.push(instance);return instance;
  }
- const synth=new Synth(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory,Sampler:factory}),onStatus:s=>statuses.push(s)});
+ const synth=new Synth(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory,Sampler:factory,DrumMachine:factory,DrumAbuse:factory,Mallet:factory,Mellotron:factory,Smolken:factory,Versilian:factory}),onStatus:s=>statuses.push(s)});
  return {synth,instances,statuses,context};
 }
 const flush=()=>new Promise(setImmediate);
@@ -75,4 +75,27 @@ test('soft sample strikes are lifted once and zero velocity never creates a voic
  const velocities=instances[0].events.map(e=>e.velocity);
  assert.equal(velocities[0],36);assert.equal(velocities[1],playableVelocity(64));assert.equal(velocities[2],127);
  synth.noteOn('soft',60,0);assert.equal(instances[0].events.length,3);assert.equal(synth.sampleVoices.has('soft'),false);
+});
+
+test('every additional sampler routes to the live bus with correct bank or source',async()=>{
+ for(const engine of ['electric','machine','abuse','mallet','mellotron','smolken','versilian','soundfont']){
+  const {synth,instances}=setup();
+  const loading=synth.selectPreset({id:'test',name:'Test',engine,instrument:'test',kit:'MusyngKite'});
+  await flush();const inst=instances[0];assert.equal(inst.options.destination,synth.input);
+  if(engine==='abuse')assert.deepEqual(inst.options.source,{kind:'machine',machine:'test'});
+  else assert.equal(inst.options.instrument,'test');
+  if(engine==='soundfont')assert.equal(inst.options.kit,'MusyngKite');
+  inst.resolve();assert.equal(await loading,true);synth.noteOn('key',60,80,'usb');
+  assert.equal(inst.events[0].note,['machine','abuse'].includes(engine)?'kick':60);
+  synth.panic();assert.equal(synth.sampleVoices.size,0);
+ }
+});
+test('named drum kits preserve tails, choke hats and ignore unmapped keys',async()=>{
+ const {synth,instances}=setup();const loading=synth.selectPreset({id:'kit',name:'Kit',engine:'abuse',instrument:'roland-tr-808'});
+ await flush();const inst=instances[0];inst.resolve();await loading;
+ synth.noteOn('kick',60,100);synth.noteOff('kick');assert.equal(inst.stops,0);
+ synth.noteOn('open',70,100);synth.noteOn('closed',66,100);assert.equal(inst.stops,1);
+ assert.equal(inst.events.at(-1).note,'closed-hihat');
+ const count=inst.events.length;synth.noteOn('unused',2,100);assert.equal(inst.events.length,count);
+ synth.panic();
 });

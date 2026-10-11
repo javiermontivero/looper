@@ -7,17 +7,31 @@ export const SOUND_ROLES=[
  {id:'melody',name:'Melodías',presets:['piano','wurlitzer','guitar','strings','glass','neon','arcade','reed']},
  {id:'texture',name:'Acentos y texturas',presets:['marimba','glass','pluck','halo','arcade']}
 ];
+export function buildRoles(presets){
+ const pages=[],first=[];
+ for(const role of SOUND_ROLES){
+  const ids=[...new Set([...role.presets,...presets.filter(p=>p.roles?.includes(role.id)).map(p=>p.id)])];
+  const sounds=ids.map(id=>presets.find(p=>p.id===id)).filter(Boolean);
+  const total=Math.ceil(sounds.length/64);
+  for(let start=0;start<sounds.length;start+=64){
+   const page=start/64+1;
+   const entry={id:page===1?role.id:role.id+':'+page,baseId:role.id,name:role.name+(total>1?' '+page+'/'+total:''),presets:sounds.slice(start,start+64)};
+   (page===1?first:pages).push(entry);
+  }
+ }
+ return [...first,...pages];
+}
 // One MIDI step of hysteresis avoids alternating at a boundary; endpoints always work.
 export function potIndex(value,length,current=-1){
  if(!Number.isFinite(value)||length<1)return current;
- const v=Math.max(0,Math.min(127,value)),width=128/length;
+ const v=Math.max(0,Math.min(127,value)),width=128/length,hysteresis=Math.min(1,Math.max(0,(width-1)/2));
  if(v===0)return 0;if(v===127)return length-1;
- if(current>=0&&current<length&&v>=current*width-1&&v<(current+1)*width+1)return current;
+ if(current>=0&&current<length&&v>=current*width-hysteresis&&v<(current+1)*width+hysteresis)return current;
  return Math.min(length-1,Math.floor(v/width));
 }
 export class SoundBrowser{
  constructor(presets,{presetId,roleId,remembered={}}={}){
-  this.presets=presets;this.roles=SOUND_ROLES.map(r=>({...r,presets:r.presets.map(id=>presets.find(p=>p.id===id)).filter(Boolean)})).filter(r=>r.presets.length);
+  this.presets=presets;this.roles=buildRoles(presets);
   this.remembered={};
   for(const r of this.roles)this.remembered[r.id]=r.presets.some(p=>p.id===remembered?.[r.id])?remembered[r.id]:r.presets[0].id;
   const saved=this.roles.findIndex(r=>r.id===roleId&&r.presets.some(p=>p.id===presetId));

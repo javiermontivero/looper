@@ -3,7 +3,12 @@
 Versión 0.2 desplegada con autorización del usuario. Incluye pistas dinámicas de grabación y overdub.
 
 ## Instrumento
-Siete instrumentos smplr 1.1.0: piano acústico, Wurlitzer, bajo acústico, guitarra nylon, cuerdas, marimba y batería acústica Hydrogen. Se descarga solo el instrumento elegido, con indicador de carga; cambiarlo libera el anterior y conserva los loops de audio. Requiere Internet para descargar la biblioteca y las muestras desde jsDelivr, smpldsnds.github.io y gleitz.github.io. Créditos y licencias en public/sounds.html. Las notas tocadas durante la carga se descartan. Hasta 24 notas sostenidas de samples; pitch bend aplicado a notas nuevas (no a notas ya sonando).
+Catálogo completo de instrumentos publicados por los helpers de smplr 1.1.0: ElectricPiano, DrumMachine, DrumAbuse (máquinas), Mallet, Mellotron, Smolken y Versilian. También 128 programas GM de cada banco FluidR3_GM, MusyngKite y FatBoy, Tabla india, Splendid Grand Piano, batería acústica Hydrogen y los 12 presets FM propios.
+El catálogo observado durante esta implementación contiene 862 presets/variantes únicos; el catálogo remoto de Versilian puede variar. No incluye importación de archivos SF2 propios, packs personalizados ni instrumentos sin catálogo automático.
+
+Los metadatos adicionales se consultan al abrir; el catálogo GM y los presets originales siguen disponibles si falla esa consulta. Ajustes → Sonidos y créditos muestra cantidad y fallos por familia, con botón Actualizar catálogo. No se instancia ni descarga audio al enumerar sonidos: solo al seleccionar uno con audio activado. Se serializan las cargas, se aborta la anterior y se libera el sampler anterior; no se acumulan bancos en RAM. No se encolan notas durante la carga.
+
+Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC13; CC14 recorre los sonidos de la página, todos alcanzables con valores 0–127 en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
 
 Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
@@ -54,10 +59,9 @@ Notas MIDI positivas usan la curva 36 + 91 × ((v−1)/126)^0,65, aplicada una s
 ## Pots y volumen del MiniControl
 Canal MIDI 1, modo CC absoluto: CC13 elige el rol musical, CC14 el sonido dentro
 del rol y CC7 controla el volumen master (instrumento, loops y clic).
-Los roles mezclan los 19 sonidos ya incluidos: base rítmica, bajos,
+Los roles mezclan todos los sonidos disponibles: base rítmica, bajos,
 acompañamiento, fondos, melodías y acentos/texturas. Un sonido puede figurar
-en varios roles sin duplicar sus muestras. El catálogo ampliado de Soundfonts
-todavía no se incorporó.
+en varios roles sin duplicar sus muestras. Los bancos se distinguen en el nombre, no definen los roles.
 
 Cada rol recuerda su última variante. El selector visual responde al pot
 inmediatamente; la carga se solicita tras 250 ms sin cambiar la selección.
@@ -67,3 +71,5 @@ Los controles fijos tienen prioridad sobre el aprendizaje y las asignaciones
 antiguas; las asignaciones antiguas de volumen se ignoran. El slider de pantalla
 y CC7 siguen sincronizados. Los controles anterior/siguiente aprendidos recorren
 el rol actual. Perder foco, desconectar o silenciar cancela un cambio pendiente.
+
+Las cajas DrumMachine/DrumAbuse mapean los grupos publicados a notas MIDI, conservando bombo 36/60, snare 38/62 y hi-hat cuando esos grupos existen. El resto se distribuye entre 36–59 y 84–127; 60–83 refleja 36–59. Tabla usa 60–88. Los pads reservados 30–45 siguen controlando pistas en canal 1.
