@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {LoopCore} from '../public/loop-core.js';
-const core=()=>new LoopCore(1000,{maxSeconds:2,minSeconds:.004});
+const core=()=>new LoopCore(1000,{maxSeconds:2,minSeconds:.004,countInBeats:0});
 function prepare(c,i){while(c.tracks.length<=i)c.command({type:'add'});c.command({type:'prepare',track:i,data:new Float32Array(c.capacity)});}
 function run(c,input){const output=new Float32Array(input.length);c.process(input,output);return [...output];}
 function record(c,i,samples){prepare(c,i);c.command({type:'record',track:i});if(c.pending>=0)run(c,Array(Math.ceil((c.length-c.position)/c.speed)).fill(0));run(c,samples);c.command({type:'stop'});}
@@ -18,7 +18,7 @@ test('fixed eight-bar guide follows BPM independently of first take duration',()
  record(c,0,Array(10).fill(.2));assert.equal(c.length,10);assert.equal(c.baseLength,32000);
  c.command({type:'tempo',value:120});assert.equal(c.state().baseSeconds,16);assert.equal(c.length,10);
 });
-test('first take starts immediately and closes at its exact duration',()=>{
+test('take closes at its exact duration after recording starts',()=>{
  const c=core();record(c,0,[1,2,3,4,5,6,7,8]);
  assert.equal(c.length,8);assert.equal(c.position,0);assert.equal(c.active,-1);
  assert.deepEqual([...c.tracks[0].data.slice(0,8)],[1,2,3,4,5,6,7,8]);
@@ -129,6 +129,7 @@ test('metronome follows tempo changes and never enters recorded audio or overdub
  clickStarts(c,48000);c.command({type:'tempo',value:240});
  const starts=clickStarts(c,48000);assert.equal(starts[1]-starts[0],12000);
  prepare(c,0);c.command({type:'trigger',track:0});
+ clickStarts(c,c.countInRemaining);
  assert.ok(clickStarts(c,24000).length>0);c.command({type:'trigger',track:0});
  assert.ok(c.tracks[0].data.every(x=>x===0));
  c.command({type:'record',track:0});clickStarts(c,24000);c.command({type:'stop'});
@@ -144,4 +145,42 @@ test('clearing the last recorded track while another is armed starts a free take
  c.command({type:'record',track:1});c.command({type:'clear',track:0});
  assert.equal(c.pending,-1);assert.equal(c.active,1);run(c,Array(7).fill(.3));c.command({type:'stop'});
  assert.equal(c.length,7);assert.equal(c.tracks[1].hasAudio,true);
+});
+
+test('first take counts exactly sixteen beats at the selected BPM without capturing input',()=>{
+ for(const bpm of [60,120,137,240]){
+  const c=new LoopCore(8000);c.command({type:'tempo',value:bpm});prepare(c,0);
+  c.command({type:'trigger',track:0});
+  const total=Math.round(8000*60/bpm*16);
+  assert.equal(c.pending,0);assert.equal(c.active,-1);assert.equal(c.countInRemaining,total);
+  assert.equal(c.state().countInBeat,0);
+  const output=run(c,Array(total-1).fill(.9));
+  assert.ok(output.some(x=>Math.abs(x)>1e-5),'count-in is audible even when metronome is off');
+  assert.equal(c.active,-1);assert.equal(c.captured,0);
+  assert.ok(c.tracks[0].data.every(x=>x===0));
+  run(c,[.9]);assert.equal(c.active,0);assert.equal(c.captured,0);
+  assert.equal(c.countInRemaining,0);assert.equal(c.metronome,false);
+  run(c,Array(2000).fill(.25));c.command({type:'stop'});
+  assert.equal(c.length,2000);assert.ok(c.tracks[0].data.slice(0,2000).every(x=>x===.25));
+  prepare(c,1);c.command({type:'record',track:1});
+  assert.equal(c.active,1,'subsequent take at loop start has no count-in');
+  assert.equal(c.countInRemaining,0);
+ }
+});
+test('count-in cancels on second press, stop, pause, clear or reset and locks BPM',()=>{
+ for(const type of ['trigger','stop','pause','clear','reset']){
+  const c=new LoopCore(8000);prepare(c,0);c.command({type:'trigger',track:0});
+  run(c,Array(100).fill(.8));c.command({type:'tempo',value:60});assert.equal(c.bpm,120);
+  c.command({type,track:0});assert.equal(c.pending,-1);assert.equal(c.countInRemaining,0);
+  assert.ok(run(c,Array(65000).fill(.8)).every(x=>x===0));
+  assert.equal(c.active,-1);assert.equal(c.length,0);
+ }
+});
+test('count-in metronome stays on if enabled and toggling it does not restart the count',()=>{
+ const c=new LoopCore(8000);prepare(c,0);c.command({type:'trigger',track:0});
+ run(c,Array(100).fill(0));const remaining=c.countInRemaining,phase=c.beatPhase;
+ c.command({type:'metronome',value:true});assert.equal(c.countInRemaining,remaining);assert.equal(c.beatPhase,phase);
+ run(c,Array(remaining).fill(0));assert.equal(c.metronome,true);assert.equal(c.active,0);
+ assert.ok(run(c,Array(200).fill(0)).some(x=>Math.abs(x)>1e-5));
+ assert.ok(c.tracks[0].data.every(x=>x===0));
 });

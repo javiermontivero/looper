@@ -144,8 +144,9 @@ function renderLoop(state){
 
  const elapsed=active?state.elapsed:state.position/(context?.sampleRate||48000)/(state.speed||1);
  const base=state.baseSeconds||32*60/bpm;
- loopProgress.value=base?(elapsed%base)/base:0;
+ loopProgress.value=state.countInRemaining>0?1-state.countInRemaining/state.countInTotal:base?(elapsed%base)/base:0;
  $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*8).toFixed(1)+'/8 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 8 compases · '+base.toFixed(1)+' s');
+ if(state.countInRemaining>0)$('#loop-time').textContent='Entrada '+(Math.floor(state.countInBeat/4)+1)+'/4 · '+(state.countInBeat%4+1)+'/4';
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i];
   const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.length/(context?.sampleRate||48000)/(state.speed||1)).toFixed(1)+' s':'';
@@ -163,7 +164,7 @@ function renderLoop(state){
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i],row=$('#track-'+i),record=row.querySelector('[data-loop-action="record"]'),mute=row.querySelector('[data-loop-action="mute"]'),clear=row.querySelector('[data-loop-action="clear"]');
   row.classList.toggle('recording',state.active===i);row.classList.toggle('muted',t.muted);row.classList.toggle('playing',t.hasAudio&&!t.muted&&!state.paused);
-  row.querySelector('.track-state').textContent=state.pending===i?'ESPERA':state.active===i?(t.mode==='overdub'?'DUB':'REC'):(t.hasAudio?(state.paused?'II':t.muted?'OFF':'ON'):'');
+  row.querySelector('.track-state').textContent=state.pending===i?(state.countInRemaining>0?'PREVIA':'ESPERA'):state.active===i?(t.mode==='overdub'?'DUB':'REC'):(t.hasAudio?(state.paused?'II':t.muted?'OFF':'ON'):'');
   record.textContent=state.pending===i?'Cancelar':state.active===i?'Cerrar':t.hasAudio?'Overdub':'Grabar';
   record.setAttribute('aria-pressed',String(state.active===i||state.pending===i));
   mute.textContent=t.muted?'▶':'■';mute.disabled=!t.hasAudio;mute.setAttribute('aria-pressed',String(!t.muted&&t.hasAudio));

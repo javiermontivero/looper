@@ -1,11 +1,12 @@
 // Sample-clock transport. Only live instrument input is captured.
 const emptyTrack=()=>({data:null,length:0,position:0,edge:0,hasAudio:false,muted:false,gain:1,mode:'empty'});
 export class LoopCore {
- constructor(rate,{maxSeconds=60,minSeconds=.25}={}){
+ constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=16}={}){
   this.rate=rate;this.capacity=Math.ceil(rate*maxSeconds);this.minimum=Math.ceil(rate*minSeconds);
   this.length=0;this.baseLength=rate*16;this.position=0;this.bpm=120;this.referenceBpm=120;this.speed=1;
   this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;this.paused=false;
   this.tracks=[emptyTrack()];this.renderTracks=[];this.revision=0;this.message='';
+  this.countInBeats=countInBeats;this.countInRemaining=0;this.countInTotal=0;
   this.metronome=false;this.beatPhase=1;
   this.click=new Float32Array(Math.ceil(rate*.02));
   for(let i=0;i<this.click.length;i++){const t=i/rate;this.click[i]=.18*Math.sin(2*Math.PI*1000*t)*Math.min(1,t/.001)*Math.exp(-t*240);}
@@ -20,9 +21,16 @@ export class LoopCore {
  cancelPending(){
   if(this.pending<0)return;
   const t=this.tracks[this.pending];t.mode=t.hasAudio?'playing':'empty';
-  this.pending=-1;
+  this.pending=-1;this.countInRemaining=0;this.countInTotal=0;this.clickIndex=this.click.length;
+ }
+ armFirst(i){
+  if(!this.countInBeats){this.start(i);return;}
+  this.pending=i;this.paused=false;this.tracks[i].mode='armed';
+  this.countInTotal=this.countInRemaining=Math.round(this.rate*60/this.bpm*this.countInBeats);
+  this.beatPhase=1;this.clickIndex=this.click.length;this.touch();
  }
  start(i){
+  this.countInRemaining=0;this.countInTotal=0;
   this.pending=-1;this.active=i;this.captured=0;this.closingAt=0;this.paused=false;
   const t=this.tracks[i];t.muted=false;t.mode=t.hasAudio?'overdub':'recording';
   if(!t.hasAudio){t.length=0;t.position=0;}
@@ -33,7 +41,7 @@ export class LoopCore {
  command(c){
   if(!c||typeof c.type!=='string')return;
   if(c.type==='add'){if(this.tracks.length<16){this.tracks.push(emptyTrack());this.touch();}return;}
-  if(c.type==='metronome'){if(typeof c.value==='boolean'){this.metronome=c.value;this.beatPhase=1;this.clickIndex=this.click.length;this.touch();}return;}
+  if(c.type==='metronome'){if(typeof c.value==='boolean'){this.metronome=c.value;if(!this.countInRemaining){this.beatPhase=1;this.clickIndex=this.click.length;}this.touch();}return;}
   if(c.type==='tempo'){
    if(!Number.isFinite(c.value)||c.value<40||c.value>240)return;
    if(this.active>=0||this.pending>=0){this.touch('Cerrá o cancelá la grabación para cambiar el tempo.');return;}
@@ -43,6 +51,7 @@ export class LoopCore {
   if(c.type==='pause'){this.cancelPending();this.finish();this.paused=true;this.metronome=false;this.touch();return;}
   if(c.type==='resume'){this.paused=false;this.touch();return;}
   if(c.type==='reset'){
+   this.countInRemaining=0;this.countInTotal=0;this.clickIndex=this.click.length;
    this.tracks=[emptyTrack()];this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;
    this.length=0;this.baseLength=this.rate*60/this.bpm*32;this.position=0;this.paused=false;this.referenceBpm=this.bpm;this.speed=1;
    this.metronome=false;this.beatPhase=1;this.touch();return;
@@ -55,7 +64,7 @@ export class LoopCore {
   if(c.type==='clear'){
    if(this.pending===i)this.cancelPending();
    if(this.active===i){this.active=-1;this.captured=0;this.closingAt=0;}
-   this.tracks[i]=emptyTrack();this.recalculate();if(!this.length&&this.pending>=0)this.start(this.pending);this.touch();return;
+   this.tracks[i]=emptyTrack();this.recalculate();if(!this.length&&this.pending>=0&&!this.countInRemaining)this.armFirst(this.pending);this.touch();return;
   }
   if(c.type!=='record'&&c.type!=='trigger')return;
   if(this.pending===i){this.cancelPending();this.touch();return;}
@@ -68,7 +77,8 @@ export class LoopCore {
   if(!t.data){this.touch('No se pudo preparar la memoria de la pista.');return;}
   if(this.active>=0){this.touch('Cerrá la toma actual antes de grabar otra pista.');return;}
   this.cancelPending();this.paused=false;
-  if(!this.length||this.position<1e-7)this.start(i);
+  if(!this.length)this.armFirst(i);
+  else if(this.position<1e-7)this.start(i);
   else{this.pending=i;t.mode='armed';this.touch();}
  }
  finish(){
@@ -88,16 +98,20 @@ export class LoopCore {
   this.recalculate();this.touch();
  }
  process(input,output){
-  if(!this.metronome&&(this.paused||(!this.length&&this.active<0))){output.fill(0);return;}
+  if(!this.metronome&&!this.countInRemaining&&(this.paused||(!this.length&&this.active<0))){output.fill(0);return;}
   const ramp=1/Math.max(1,this.rate*.005);
   for(let frame=0;frame<output.length;frame++){
    let click=0;
-   if(this.metronome){
+   if(this.metronome||this.countInRemaining>0){
     if(this.beatPhase>=1-1e-12){this.beatPhase=Math.max(0,this.beatPhase-1);this.clickIndex=0;}
     if(this.clickIndex<this.click.length)click=this.click[this.clickIndex++];
     this.beatPhase+=this.bpm/(60*this.rate);
    }
    output[frame]=click;if(this.paused)continue;
+   if(this.countInRemaining>0){
+    if(--this.countInRemaining===0){const track=this.pending;this.start(track);if(!this.metronome)this.clickIndex=this.click.length;}
+    continue;
+   }
    const sample=Number.isFinite(input?.[frame])?input[frame]:0;
    if(!this.length){
     if(this.active>=0){
@@ -156,6 +170,8 @@ export class LoopCore {
   return {length:this.length,baseLength:this.baseLength,position:this.position,seconds:this.length/this.rate,
    baseSeconds:this.baseLength/this.rate/this.speed,metronome:this.metronome,bpm:this.bpm,referenceBpm:this.referenceBpm,speed:this.speed,
    elapsed:this.captured/this.rate/this.speed,active:this.active,pending:this.pending,closing:this.closingAt>0,paused:this.paused,
+   countInRemaining:this.countInRemaining,countInTotal:this.countInTotal,
+   countInBeat:this.countInRemaining?Math.min(this.countInBeats-1,Math.floor((this.countInTotal-this.countInRemaining)*this.bpm/(60*this.rate))):null,
    revision:this.revision,message:this.message,
    tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,mode:t.mode,length:t.length,multiple:this.baseLength?t.length/this.baseLength:0}))};
  }

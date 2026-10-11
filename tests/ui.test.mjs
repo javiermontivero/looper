@@ -68,13 +68,17 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
  const sendPad=(number,value,status=0x90,device='keyboard')=>globals.process({data:[status,number,value]},device);
  const settle=()=>new Promise(setImmediate);
+ const finishCountIn=()=>{if(core.countInRemaining){core.process(new Float32Array(core.countInRemaining),new Float32Array(core.countInRemaining));publish();}};
  sendPad(45,0);await settle();assert.equal(core,undefined,'release alone cannot create a track or audio engine');
  const initialSound=ids.get('sound').value;
  sendPad(32,127);sendPad(32,0);await settle();
  assert.equal(ids.get('sound').value,initialSound,'pad overrides an old preset mapping');assert.equal(played.length,0,'pad never plays the synth');
  assert.equal(core.tracks.length,2,'first note 32 adds only its own track');
  assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 3');
- assert.equal(core.active,1,'release during engine startup does not close recording');
+ assert.equal(core.pending,1,'first pad enters count-in');assert.equal(core.active,-1);
+ assert.ok(ids.get('loop-time').textContent.startsWith('Entrada 1/4'));
+ assert.equal(ids.get('tempo').disabled,true);finishCountIn();
+ assert.equal(core.active,1,'release during count-in does not cancel recording');
  assert.equal(ids.get('volume').value,65,'pad never adjusts volume');
  assert.equal(core.tracks[0].data,null,'unused initial track allocates no audio');
  core.process(new Float32Array(300).fill(.25),new Float32Array(300));
@@ -84,7 +88,8 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
 
  const click=async(type,track)=>{actions.find(b=>b.dataset.loopAction===type&&b.dataset.track===String(track)).onclick();await new Promise(setImmediate);};
  await click('record',0);
- assert.equal(core.active,0,'click starts capture');
+ assert.equal(core.pending,0);finishCountIn();
+ assert.equal(core.active,0,'click starts capture after the count-in');
  core.process(new Float32Array(1000).fill(.25),new Float32Array(1000));publish();
  assert.equal(ids.get('track-0').querySelector('.track-state').textContent,'REC');
  await click('record',0);
@@ -132,6 +137,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(core.tracks.length,1,'out-of-range notes and release do not add tracks');
  sendPad(45,127,0x90,'reconnected-keyboard');sendPad(45,127,0x90,'reconnected-keyboard');await flush();
  assert.equal(core.tracks.length,2,'note 45 adds only its own track, without intermediate rows');
+ assert.equal(core.pending,1);finishCountIn();
  assert.equal(core.active,1,'fixed controls work on channel 1 after device ID changes');
  assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 16');assert.equal(ids.get('add-track').disabled,false);
  assert.equal(core.tracks[0].data,null,'only the selected track reserves audio');
@@ -144,7 +150,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(core.tracks[1].hasAudio,false,'hold clears a track created by its fixed note');
  sendPad(45,0,0x90,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
  sendPad(31,127);sendPad(31,0);await flush();
- assert.equal(core.tracks.length,3);assert.equal(core.active,2,'note 31 gets its own new slot after note 45');
+ assert.equal(core.tracks.length,3);assert.equal(core.pending,2);finishCountIn();assert.equal(core.active,2,'note 31 gets its own new slot after note 45');
  assert.equal(ids.get('track-2').attrs['aria-label'],'Pista 2');
  core.process(new Float32Array(300).fill(.25),new Float32Array(300));
  sendPad(31,127);sendPad(31,0);await flush();assert.equal(core.active,-1);
