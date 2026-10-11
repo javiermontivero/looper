@@ -8,18 +8,15 @@ export const SOUND_ROLES=[
  {id:'texture',name:'Acentos y texturas',presets:['marimba','glass','pluck','halo','arcade']}
 ];
 export function buildRoles(presets){
- const pages=[],first=[];
- for(const role of SOUND_ROLES){
+ return SOUND_ROLES.map(role=>{
   const ids=[...new Set([...role.presets,...presets.filter(p=>p.roles?.includes(role.id)).map(p=>p.id)])];
-  const sounds=ids.map(id=>presets.find(p=>p.id===id)).filter(Boolean);
-  const total=Math.ceil(sounds.length/64);
+  const sounds=ids.map(id=>presets.find(p=>p.id===id)).filter(Boolean),pages=[];
   for(let start=0;start<sounds.length;start+=64){
-   const page=start/64+1;
-   const entry={id:page===1?role.id:role.id+':'+page,baseId:role.id,name:role.name+(total>1?' '+page+'/'+total:''),presets:sounds.slice(start,start+64)};
-   (page===1?first:pages).push(entry);
+   const number=start/64+1;
+   pages.push({id:number===1?role.id:role.id+':'+number,presets:sounds.slice(start,start+64)});
   }
- }
- return [...first,...pages];
+  return {...role,presets:sounds,pages};
+ }).filter(role=>role.pages.length);
 }
 // One MIDI step of hysteresis avoids alternating at a boundary; endpoints always work.
 export function potIndex(value,length,current=-1){
@@ -30,27 +27,36 @@ export function potIndex(value,length,current=-1){
  return Math.min(length-1,Math.floor(v/width));
 }
 export class SoundBrowser{
- constructor(presets,{presetId,roleId,remembered={}}={}){
+ constructor(presets,{presetId,roleId,remembered={},rememberedPages={}}={}){
+  remembered=remembered||{};rememberedPages=rememberedPages||{};
   this.presets=presets;this.roles=buildRoles(presets);
-  this.remembered={};
-  for(const r of this.roles)this.remembered[r.id]=r.presets.some(p=>p.id===remembered?.[r.id])?remembered[r.id]:r.presets[0].id;
-  const saved=this.roles.findIndex(r=>r.id===roleId&&r.presets.some(p=>p.id===presetId));
+  this.remembered={};this.rememberedPages={};
+  for(const role of this.roles){
+   this.rememberedPages[role.id]=Number.isInteger(rememberedPages[role.id])&&role.pages[rememberedPages[role.id]]?rememberedPages[role.id]:0;
+   for(const page of role.pages)this.remembered[page.id]=page.presets.some(p=>p.id===remembered[page.id])?remembered[page.id]:page.presets[0].id;
+  }
+  const saved=this.roles.findIndex(r=>r.id===roleId?.split(':')[0]&&r.presets.some(p=>p.id===presetId));
   this.roleIndex=saved>=0?saved:Math.max(0,this.roles.findIndex(r=>r.presets.some(p=>p.id===presetId)));
   this.choose(presetId);
  }
  get role(){return this.roles[this.roleIndex];}
- get preset(){return this.role.presets.find(p=>p.id===this.remembered[this.role.id])||this.role.presets[0];}
+ get pageIndex(){return this.rememberedPages[this.role.id];}
+ get page(){return this.role.pages[this.pageIndex];}
+ get preset(){return this.page.presets.find(p=>p.id===this.remembered[this.page.id])||this.page.presets[0];}
  choose(id){
   if(!this.role.presets.some(p=>p.id===id)){
    const index=this.roles.findIndex(r=>r.presets.some(p=>p.id===id));if(index<0)return false;
    this.roleIndex=index;
   }
-  this.remembered[this.role.id]=id;return true;
+  this.rememberedPages[this.role.id]=this.role.pages.findIndex(page=>page.presets.some(p=>p.id===id));
+  this.remembered[this.page.id]=id;return true;
  }
  selectRole(index){if(!Number.isInteger(index)||!this.roles[index])return false;const changed=this.roleIndex!==index;this.roleIndex=index;return changed;}
+ selectPage(index){if(!Number.isInteger(index)||!this.role.pages[index])return false;const changed=this.pageIndex!==index;this.rememberedPages[this.role.id]=index;return changed;}
  turnRole(value){return this.selectRole(potIndex(value,this.roles.length,this.roleIndex));}
+ turnPage(value){return this.selectPage(potIndex(value,this.role.pages.length,this.pageIndex));}
  turnSound(value){
-  const list=this.role.presets,current=list.indexOf(this.preset),index=potIndex(value,list.length,current);
+  const list=this.page.presets,current=list.indexOf(this.preset),index=potIndex(value,list.length,current);
   if(index===current||!list[index])return false;return this.choose(list[index].id);
  }
 }

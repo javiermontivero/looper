@@ -60,7 +60,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  }
  const soundTimers=new Map();let soundTimerId=10000;
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
-  navigator:{},localStorage:{getItem(key){return key==='looper:mappings'?JSON.stringify({next:{device:'keyboard',channel:0,type:'note',number:32},track0:{device:'keyboard',channel:0,type:'cc',number:20}}):null;},setItem(){}},
+  navigator:{},localStorage:{getItem(key){return key==='looper:mappings'?JSON.stringify({next:{device:'keyboard',channel:9,type:'note',number:32},track0:{device:'keyboard',channel:0,type:'cc',number:20}}):null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout:(fn,ms)=>{if(ms===250){const id=++soundTimerId;soundTimers.set(id,fn);return id;}return setTimeout(fn,ms);},clearTimeout:id=>{if(soundTimers.has(id))soundTimers.delete(id);else clearTimeout(id);},performance,
@@ -68,9 +68,9 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  vm.runInNewContext(source,globals);
  assert.equal(ids.get('sound-role').children.length,new SoundBrowser(PRESETS).roles.length,'musical roles with pages');
  assert.equal(ids.get('sound-role').value,'accompaniment');
- assert.equal(ids.get('sound').children.length,new SoundBrowser(PRESETS,{presetId:'piano'}).role.presets.length,'sound dropdown shows only the current role page');
+ assert.equal(ids.get('sound').children.length,new SoundBrowser(PRESETS,{presetId:'piano'}).page.presets.length,'sound dropdown shows only the current role page');
  for(const button of actions)assert.equal(typeof button.onclick,'function','all track controls must be connected');
- const sendPad=(number,value,status=0x90,device='keyboard')=>globals.process({data:[status,number,value]},device);
+ const sendPad=(number,value,status=0x99,device='keyboard')=>globals.process({data:[status,number,value]},device);
  const settle=()=>new Promise(setImmediate);
  const finishCountIn=()=>{if(core.countInRemaining){core.process(new Float32Array(core.countInRemaining),new Float32Array(core.countInRemaining));publish();}};
  sendPad(45,0);await settle();assert.equal(core,undefined,'release alone cannot create a track or audio engine');
@@ -127,7 +127,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  await click('record',0);assert.equal(ids.get('tempo').disabled,true);await click('record',0);assert.equal(ids.get('tempo').disabled,false);
  await click('clear',15);assert.equal(core.length,2000);
  core.process(new Float32Array(10),new Float32Array(10));
- const midi=value=>globals.process({data:[0x90,33,value]},'keyboard');
+ const midi=value=>globals.process({data:[0x99,33,value]},'keyboard');
  const flush=()=>new Promise(setImmediate);
  midi(1);await flush();assert.equal(core.pending,3,'velocity 1 arms an empty track');
  midi(1);await flush();assert.equal(core.pending,3,'duplicate Note On does not cancel it');
@@ -146,25 +146,25 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  globals.process({data:[0xb0,45,127]},'keyboard');await flush();
  assert.equal(core.tracks.length,1,'CC45 no longer creates a track');
  const previousPlayed=played.length;
- sendPad(45,127,0x91);sendPad(45,0,0x91);await flush();
+ sendPad(45,127,0x90);sendPad(45,0,0x90);await flush();
  assert.equal(core.tracks.length,1,'same note on another channel is not a pad');
  assert.equal(played.length,previousPlayed+1,'other channels still play the instrument');
  sendPad(46,127);sendPad(29,127);sendPad(45,0);await flush();
  assert.equal(core.tracks.length,1,'out-of-range notes and release do not add tracks');
- sendPad(45,127,0x90,'reconnected-keyboard');sendPad(45,127,0x90,'reconnected-keyboard');await flush();
+ sendPad(45,127,0x99,'reconnected-keyboard');sendPad(45,127,0x99,'reconnected-keyboard');await flush();
  assert.equal(core.tracks.length,2,'note 45 adds only its own track, without intermediate rows');
  assert.equal(core.pending,1);finishCountIn();
- assert.equal(core.active,1,'fixed controls work on channel 1 after device ID changes');
+ assert.equal(core.active,1,'fixed controls work on channel 10 after device ID changes');
  assert.equal(ids.get('track-1').attrs['aria-label'],'Pista 16');assert.equal(ids.get('add-track').disabled,false);
  assert.equal(core.tracks[0].data,null,'only the selected track reserves audio');
- sendPad(45,64,0x80,'reconnected-keyboard');await flush();assert.equal(core.active,1);
+ sendPad(45,64,0x89,'reconnected-keyboard');await flush();assert.equal(core.active,1);
  for(const fn of [...holds.values()])fn();holds.clear();await flush();
  assert.equal(core.active,1,'release cancels hold-to-clear');
  core.process(new Float32Array(300).fill(.25),new Float32Array(300));
- sendPad(45,127,0x90,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
+ sendPad(45,127,0x99,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
  for(const fn of [...holds.values()])fn();holds.clear();await flush();
  assert.equal(core.tracks[1].hasAudio,false,'hold clears a track created by its fixed note');
- sendPad(45,0,0x90,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
+ sendPad(45,0,0x99,'reconnected-keyboard');await flush();assert.equal(core.active,-1);
  sendPad(31,127);sendPad(31,0);await flush();
  assert.equal(core.tracks.length,3);assert.equal(core.pending,2);finishCountIn();assert.equal(core.active,2,'note 31 gets its own new slot after note 45');
  assert.equal(ids.get('track-2').attrs['aria-label'],'Pista 2');
@@ -186,11 +186,11 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  cc(7,0,0xb1);assert.equal(masterGain,.5,'fixed slider only listens on channel 1');
  const before=loaded.length;
  cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.equal(ids.get('sound-role').value,'bass');
- cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).role.presets.length));assert.equal(ids.get('sound').value,'rubber');
+ cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).page.presets.length));assert.equal(ids.get('sound').value,'rubber');
  assert.equal(loaded.length,before,'pot movements do not start immediate sample loads');
  assert.equal(soundTimers.size,1);loadSelected();
  assert.equal(loaded.at(-1),'rubber');assert.equal(loaded.length,before+1);
- cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).role.presets.length));assert.equal(soundTimers.size,0,'duplicate values do not reload the sound');
+ cc(14,Math.floor(2.5*128/new SoundBrowser(PRESETS,{presetId:'bass'}).page.presets.length));assert.equal(soundTimers.size,0,'duplicate values do not reload the sound');
  cc(13,Math.floor(5.5*128/new SoundBrowser(PRESETS).roles.length));cc(14,0);loadSelected();assert.equal(loaded.at(-1),'marimba');
  cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.equal(ids.get('sound').value,'rubber','role remembers its last variant');loadSelected();
  assert.equal(loaded.at(-1),'rubber');
@@ -203,6 +203,11 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  assert.equal(ids.get('sound').value,'piano');assert.equal(loaded.at(-1),'piano');
  ids.get('sound').onchange({target:{value:'guitar'}});
  assert.equal(ids.get('sound').value,'guitar');assert.equal(loaded.at(-1),'guitar');
+ cc(12,127);assert.equal(ids.get('sound-role').value,'accompaniment');
+ const category=new SoundBrowser(PRESETS,{presetId:'piano'}).role;
+ assert.equal(ids.get('sound-page').value,String(category.pages.length-1));
+ cc(14,127);assert.equal(ids.get('sound').value,category.pages.at(-1).presets.at(-1).id);loadSelected();
+ cc(12,0);assert.equal(ids.get('sound').value,'guitar','page remembers selected instrument');loadSelected();
  const learn=buttons.find(b=>b.dataset.learn==='previous');learn.onclick();
  cc(13,Math.ceil(128/new SoundBrowser(PRESETS).roles.length+1));assert.ok(ids.get('learn-status').textContent.startsWith('Pulsá'),'fixed pots cannot be reassigned by learn');
  cc(7,127);assert.equal(masterGain,1);learn.onclick();

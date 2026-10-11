@@ -32,3 +32,19 @@ test('each role remembers its variant and restores only valid saved choices',()=
  assert.equal(restored.role.id,'bass');assert.equal(restored.preset.id,'rubber');
  assert.equal(new SoundBrowser(PRESETS,{presetId:'missing',roleId:'missing',remembered:null}).preset.id,'drums');
 });
+
+test('category and page controls are independent, ordered and remember sounds across reloads',()=>{
+ const presets=[...PRESETS,...Array.from({length:140},(_,i)=>({id:'extra'+i,roles:['rhythm']}))];
+ const browser=new SoundBrowser(presets,{presetId:'drums'});
+ assert.equal(browser.roles.length,6);
+ assert.deepEqual(browser.role.pages.map(p=>p.id),['rhythm','rhythm:2','rhythm:3','rhythm:4']);
+ browser.turnPage(127);assert.equal(browser.role.id,'rhythm');assert.equal(browser.pageIndex,3);
+ browser.turnSound(127);const last=browser.preset.id;
+ browser.turnPage(0);assert.equal(browser.preset.id,'drums');
+ browser.turnPage(127);assert.equal(browser.preset.id,last);
+ browser.selectRole(1);browser.selectRole(0);assert.equal(browser.preset.id,last);
+ const restored=new SoundBrowser(presets,{presetId:'bass',roleId:'bass',remembered:browser.remembered,rememberedPages:browser.rememberedPages});
+ restored.selectRole(0);assert.equal(restored.preset.id,last);assert.equal(restored.pageIndex,3);
+ const legacy=new SoundBrowser(presets,{presetId:last,roleId:'rhythm:4',remembered:browser.remembered});
+ assert.equal(legacy.role.id,'rhythm');assert.equal(legacy.pageIndex,3);assert.equal(legacy.preset.id,last);
+});

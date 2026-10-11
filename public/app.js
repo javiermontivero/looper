@@ -10,7 +10,7 @@ let synth,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
 const savedCatalogPreset=read('looper:catalog-preset',null)||read('looper:preset','piano');
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
-let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{})});
+let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{}),rememberedPages:read('looper:role-pages',{})});
 let soundTimer,shownRole,presetChanges=0;
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latencyStats=new LatencyStats();
@@ -38,12 +38,16 @@ async function activate(){
  finally{starting=null;}})();return starting;
 }
 function renderSoundChoice(){
- const role=soundBrowser.role;$('#sound-role').value=role.id;
- if(shownRole!==role.id){
+ const role=soundBrowser.role,page=soundBrowser.page;$('#sound-role').value=role.id;
+ if(shownRole!==page.id){
+  $('#sound-page').replaceChildren();
+  role.pages.forEach((p,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=(i+1)+'/'+role.pages.length;$('#sound-page').append(option);});
   $('#sound').replaceChildren();
-  for(const p of role.presets){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;$('#sound').append(option);}
-  shownRole=role.id;
+  for(const p of page.presets){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;$('#sound').append(option);}
+  shownRole=page.id;
  }
+ $('#sound-page').value=String(soundBrowser.pageIndex);
+ $('#sound-page').disabled=role.pages.length===1;
  $('#sound').value=soundBrowser.preset.id;
 }
 function setPreset(p){
@@ -51,7 +55,7 @@ function setPreset(p){
  clearTimeout(soundTimer);soundTimer=null;
  const changed=preset.id!==p.id;preset=p;soundBrowser.choose(p.id);
  if(synth&&changed)synth.selectPreset(p);
- renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
+ renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);save('looper:role-pages',soundBrowser.rememberedPages);
 }
 function queueSound(){
  renderSoundChoice();clearTimeout(soundTimer);
@@ -70,11 +74,12 @@ function setLearning(action){trackButtons.reset();learning=learning===action?nul
 function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
- // Reserve pad notes 30..45 on channel 1 before MIDI learn and instrument playback.
- if((e.type==='on'||e.type==='off')&&e.channel===0&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
+ // Reserve pad notes 30..45 on channel 10 before MIDI learn and instrument playback.
+ if((e.type==='on'||e.type==='off')&&e.channel===9&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
  // Fixed absolute pots and master slider precede learned mappings.
  if(e.type==='cc'&&e.channel===0){
   if(e.number===7){setVolume(e.value/127*100);return;}
+  if(e.number===12){if(soundBrowser.turnPage(e.value))queueSound();return;}
   if(e.number===13){if(soundBrowser.turnRole(e.value))queueSound();return;}
   if(e.number===14){if(soundBrowser.turnSound(e.value))queueSound();return;}
  }
@@ -83,7 +88,7 @@ function process(event,device){
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=buttonDown(e);
   if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
-  if(down&&!latches.get(action)){{const list=soundBrowser.role.presets,i=list.indexOf(soundBrowser.preset);setPreset(list[(i+(action==='next'?1:-1)+list.length)%list.length]);}}
+  if(down&&!latches.get(action)){{const list=soundBrowser.page.presets,i=list.indexOf(soundBrowser.preset);setPreset(list[(i+(action==='next'?1:-1)+list.length)%list.length]);}}
   latches.set(action,down);return;
  }
  if(e.type==='on')on(key,e.number,e.value,channel);
@@ -262,6 +267,7 @@ $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pau
 $('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);loopCommand('reset');}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
+$('#sound-page').onchange=event=>{if(soundBrowser.selectPage(Number(event.target.value)))setPreset(soundBrowser.preset);};
 $('#sound-role').onchange=event=>{const index=soundBrowser.roles.findIndex(r=>r.id===event.target.value);if(soundBrowser.selectRole(index))setPreset(soundBrowser.preset);};
 $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);if(p)setPreset(p);};
 $('#settings-open').onclick=()=>$('#settings').showModal();
@@ -276,7 +282,7 @@ async function refreshCatalog(){
   const result=await loadInstrumentCatalog();
   const wanted=soundTimer?soundBrowser.preset:presetChanges===before?PRESETS.find(p=>p.id===savedId)||preset:preset;
   const remembered={...read('looper:role-presets',{}),...soundBrowser.remembered};
-  soundBrowser=new SoundBrowser(PRESETS,{presetId:wanted.id,roleId:soundBrowser.role.id,remembered});
+  soundBrowser=new SoundBrowser(PRESETS,{presetId:wanted.id,roleId:soundBrowser.role.id,remembered,rememberedPages:soundBrowser.rememberedPages});
   $('#sound-role').replaceChildren();
   for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
   shownRole=null;setPreset(wanted);
