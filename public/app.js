@@ -183,9 +183,9 @@ function renderLoop(state){
  syncTracks(state.tracks.length);
 
  const elapsed=active?state.elapsed:state.position/(context?.sampleRate||48000)/(state.speed||1);
- const base=state.baseSeconds||32*60/bpm;
+ const base=state.baseSeconds||16*60/bpm;
  loopProgress.value=state.countInRemaining>0?1-state.countInRemaining/state.countInTotal:base?(elapsed%base)/base:0;
- $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*8).toFixed(1)+'/8 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 8 compases · '+base.toFixed(1)+' s');
+ $('#loop-time').textContent=(active?'REC '+elapsed.toFixed(1)+' s · '+(elapsed/base*4).toFixed(1)+'/4 compases':pending?'Espera al inicio · ': 'Ciclo '+((state.seconds||0)/(state.speed||1)).toFixed(1)+' s · ')+(active?'':'Base 4 compases · '+base.toFixed(1)+' s');
  if(state.countInRemaining>0)$('#loop-time').textContent='Entrada '+(Math.floor(state.countInBeat/4)+1)+'/2 · '+(state.countInBeat%4+1)+'/4';
  const counting=state.countInRemaining>0,banner=$('#count-in');
  if(counting)countInTrack=state.pending;
@@ -262,7 +262,7 @@ $('#metronome').onclick=async()=>{
 $('#tempo').onchange=event=>{
  const value=Number(event.target.value);
  if(!Number.isFinite(value)||value<40||value>240){event.target.value=bpm;return;}
- if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 8 compases · '+(32*60/bpm).toFixed(1)+' s';}
+ if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 4 compases · '+(16*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
 $('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);loopCommand('reset');}};

@@ -16,7 +16,7 @@ Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voce
 
 ## Grabación
 - Arranca con una pista; + Agregar pista añade hasta 16. Cada pista puede mezclar sonidos mediante overdub. Nueva sesión vuelve a una pista y libera sus buffers.
-- Guía fija de 8 compases de 4 tiempos: 32 beats según BPM (16 s a 120 BPM). No depende de la primera toma. Los ciclos se cuantizan independientemente a 1, 2, 4, 8… compases. La pantalla muestra segundos y avance en compases durante la toma.
+- Guía fija de 4 compases de 4 tiempos: 16 beats según BPM (8 s a 120 BPM). No depende de la primera toma. Los ciclos se cuantizan independientemente a 1, 2, 4, 8… compases. La pantalla muestra segundos y avance en compases durante la toma.
 - Primera toma (sin ningún loop grabado): cuenta previa de 2 compases de 4 tiempos al BPM seleccionado (4 s a 120 BPM), con clic automático, números grandes por pulso, compás 1/2 o 2/2 y aviso ¡REC! al comenzar. No se captura audio durante la cuenta. Pulsar otra vez cancela; pausar, borrar o reiniciar también cancela. Después se restaura el estado elegido del metrónomo. El BPM queda bloqueado durante la cuenta; Cerrar detiene la captura inmediatamente (mínimo 0,25 s), y completa el ciclo con silencio virtual.
 - Tomas posteriores y overdubs: si el ciclo está avanzado, quedan en ESPERA hasta el próximo inicio del ciclo completo, definido por la pista más larga. Pulsar otra vez mientras espera cancela. Pausar o borrar también cancela la espera.
 - Una pista vacía graba continuamente hacia el final, sin volver a escribir el comienzo ni cerrarse al pasar la duración anterior. Cerrar detiene al instante; el ciclo se redondea hacia arriba a una potencia de dos compases. Máximo 60 s de audio original por pista.

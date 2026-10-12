@@ -3,7 +3,7 @@ const emptyTrack=()=>({data:null,length:0,audioLength:0,bars:0,pendingBars:0,cha
 export class LoopCore {
  constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=8}={}){
   this.rate=rate;this.capacity=Math.ceil(rate*maxSeconds);this.minimum=Math.ceil(rate*minSeconds);
-  this.transport=0;this.recordStart=0;this.pendingAt=0;this.lastBeat=-1;this.length=0;this.baseLength=rate*16;this.position=0;this.bpm=120;this.referenceBpm=120;this.speed=1;
+  this.transport=0;this.recordStart=0;this.pendingAt=0;this.lastBeat=-1;this.length=0;this.baseLength=rate*8;this.position=0;this.bpm=120;this.referenceBpm=120;this.speed=1;
   this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;this.paused=false;
   this.tracks=[emptyTrack()];this.renderTracks=[];this.nextChange=Infinity;this.revision=0;this.message='';
   this.countInBeats=countInBeats;this.countInRemaining=0;this.countInTotal=0;
@@ -19,7 +19,7 @@ export class LoopCore {
  roundedBars(samples){let bars=1;while(bars*this.barLength<samples-this.speed-1e-7)bars*=2;return bars;}
  recalculate(){
   this.length=Math.max(0,...this.tracks.filter(t=>t.hasAudio).map(t=>t.length));
-  if(!this.length&&this.active<0){this.baseLength=this.rate*60/this.bpm*32;this.transport=0;this.position=0;this.referenceBpm=this.bpm;this.speed=1;this.lastBeat=-1;}
+  if(!this.length&&this.active<0){this.baseLength=this.rate*60/this.bpm*16;this.transport=0;this.position=0;this.referenceBpm=this.bpm;this.speed=1;this.lastBeat=-1;}
   else this.position=this.length?this.phase(this.length):this.transport;
   for(const t of this.renderTracks)t.position=this.phase(t.length);
  }
@@ -59,7 +59,7 @@ export class LoopCore {
   if(c.type==='tempo'){
    if(!Number.isFinite(c.value)||c.value<40||c.value>240)return;
    if(this.active>=0||this.pending>=0){this.touch('Cerrá o cancelá la grabación para cambiar el tempo.');return;}
-   this.bpm=c.value;if(!this.length){this.referenceBpm=this.bpm;this.baseLength=this.rate*60/this.bpm*32;}
+   this.bpm=c.value;if(!this.length){this.referenceBpm=this.bpm;this.baseLength=this.rate*60/this.bpm*16;}
    this.speed=this.bpm/this.referenceBpm;this.touch();return;
   }
   if(c.type==='pause'){this.cancelPending();this.finish();this.paused=true;this.metronome=false;this.touch();return;}
@@ -67,7 +67,7 @@ export class LoopCore {
   if(c.type==='reset'){
    this.countInRemaining=0;this.countInTotal=0;this.clickIndex=this.click.length;
    this.transport=0;this.lastBeat=-1;this.tracks=[emptyTrack()];this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;
-   this.length=0;this.baseLength=this.rate*60/this.bpm*32;this.position=0;this.paused=false;this.referenceBpm=this.bpm;this.speed=1;
+   this.length=0;this.baseLength=this.rate*60/this.bpm*16;this.position=0;this.paused=false;this.referenceBpm=this.bpm;this.speed=1;
    this.metronome=false;this.beatPhase=1;this.touch();return;
   }
   if(c.type==='stop'){this.requestFinish();return;}
