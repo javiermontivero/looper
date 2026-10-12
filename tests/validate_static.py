@@ -42,7 +42,7 @@ for element_id in re.findall(r"\$\(['\"]#([a-zA-Z0-9_-]+)['\"]\)", app):
 synth = (PUBLIC / "synth.js").read_text()
 assert "amp.connect(this.input)" in synth
 assert "this.input.connect(this.compressor)" in synth
-assert "source.connect(this.node);this.node.connect(destination)" in (PUBLIC / "looper.js").read_text()
+assert "source.connect(this.node);this.node.connect(destination.master.input,0)" in (PUBLIC / "looper.js").read_text()
 assert json.loads((ROOT / "package.json").read_text())["version"] == "0.2.0"
 assert "version:'0.2.0'" in server
 print("PASS: starts with 1 track, unique DOM ids, control bindings, all module/worklet assets served, capture routing, version 0.2.0")

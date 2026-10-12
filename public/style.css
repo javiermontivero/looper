@@ -51,3 +51,21 @@ header{margin-bottom:10px}
 #add-track{width:100%;margin-top:10px;min-height:44px;font-size:12px;background:transparent;color:var(--muted)}
 @media(min-width:720px){.track{padding:10px 14px}.loop-ring{flex-basis:72px;width:72px;height:72px}.track-actions .record{flex:0 1 130px}.track-actions details{margin-left:0}}
 @media(max-width:359px){.track{gap:8px;padding:8px}.loop-ring{flex-basis:58px;width:58px;height:58px;min-height:58px}.track-actions{gap:4px}.track-level{gap:6px;padding:6px 8px}}
+
+#save-status{font-size:11px;color:var(--muted);margin:4px 0 8px}
+#master-track{margin-bottom:8px}
+#master-play{min-height:44px;min-width:64px;padding:6px}
+#master-track .track-top{justify-content:space-between;font-size:13px}
+#fx-rack{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0 12px;background:var(--panel)}
+.fx-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:12px}
+#fx-mode{font-size:10px;color:var(--muted)}
+.fx-slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.fx-slots button{min-width:0;min-height:44px;padding:6px 3px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fx-slots button[aria-pressed="true"]{border-color:var(--green);color:var(--green)}
+.fx-type-row{display:flex;gap:8px;margin-top:10px}
+#fx-type{flex:1;min-width:0}
+#fx-close{min-width:44px;padding:6px;font-size:22px}
+.fx-param{display:grid;grid-template-columns:1fr auto;align-items:center;margin-top:8px;font-size:12px}
+.fx-param input{grid-column:1/-1;width:100%;margin:0}
+.fx-order{display:flex;justify-content:space-between;gap:8px}
+.fx-order button{font-size:12px;min-height:44px}

@@ -3,6 +3,8 @@ import {LatencyStats} from './latency.js';
 import {PRESETS,Synth,loadInstrumentCatalog} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
+import {EFFECTS,emptyChain,Mixer} from './effects.js';
+import {SessionStore,cleanConfig,prepareRestore,validateSnapshot} from './session.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -25,8 +27,11 @@ if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTy
  observer.observe({type:'longtask',buffered:false});
 }
 const latches=new Map(),computer=new Set();
-const trackNotes=[30],trackVolumes=[70];
-let selectedTrack=0;
+const trackNotes=[31];
+let selectedTrack=-1,selectedEffect=-1,mixer,chains=Array.from({length:8},emptyChain);
+let restoringAudio=false,sessionLoaded=false,sessionWritable=true,pendingSnapshot=null,configTimer,snapshotTimer,fxTimer,snapshotSerial=0,lastSavedRevision=-1;
+const session=new SessionStore(text=>{$('#save-status').textContent=session.capture?'Toma en curso · guardado al cerrar':text;});
+$('#app').inert=true;
 const trackButtons=new TrackButtons(fixedTrackCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
@@ -34,7 +39,7 @@ async function activate(){
  if(context?.state==='running')return true;
  if(starting)return starting;
  starting=(async()=>{try{
-  if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context,{onStatus:message=>{$('#sound-status').textContent=message;$('#sound-status').hidden=!message;}});synth.selectPreset(preset);synth.volume(volume/100);context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};}
+  if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context,{onStatus:message=>{$('#sound-status').textContent=message;$('#sound-status').hidden=!message;}});synth.selectPreset(preset);synth.volume(volume/100);mixer=new Mixer(context,synth);chains.forEach((c,i)=>mixer.set(i-1,c));mixer.select(selectedTrack<0?-1:trackNotes[selectedTrack]-31);context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};}
   await context.resume();return context.state==='running';
  }catch(e){notice('No se pudo activar el audio: '+errorText(e));return false;}
  finally{starting=null;}})();return starting;
@@ -53,7 +58,7 @@ function setPreset(p){
  clearTimeout(soundTimer);soundTimer=null;
  const changed=preset.id!==p.id;preset=p;soundBrowser.choose(p.id);
  if(synth&&changed)synth.selectPreset(p);
- renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
+ renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);scheduleConfig();
 }
 function queueSound(){
  renderSoundChoice();clearTimeout(soundTimer);
@@ -62,7 +67,7 @@ function queueSound(){
 function cancelSoundSelection(){
  clearTimeout(soundTimer);soundTimer=null;soundBrowser.choose(preset.id);renderSoundChoice();
 }
-function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);}
+function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);scheduleConfig();}
 let lastMidiDelay=null,volumeSaveTimer;
 function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;const started=performance.now();try{if(directMidiClick)synth.testClick();else synth.noteOn(key,note,velocity,channel);}finally{latencyStats.add('note',performance.now()-started);}}
 function off(key){synth?.noteOff(key);}
@@ -70,6 +75,7 @@ function panic(){cancelSoundSelection();synth?.panic();computer.clear();latches.
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
 function setLearning(action){trackButtons.reset();learning=learning===action?null:action;$('#learn-status').textContent=learning?(learning==='volume'?'Mové una perilla MIDI.':'Pulsá una tecla, pad o botón MIDI.'):'Asignaciones guardadas en este navegador.';renderMappings();}
 function process(event,device){
+ if(!sessionLoaded||restoringAudio)return;
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
  // Reserve pad notes 30..45 on channel 10 before MIDI learn and instrument playback.
@@ -77,9 +83,9 @@ function process(event,device){
  // Relative navigation pots and master slider precede learned mappings.
  if(e.type==='cc'&&e.channel===0){
   if(e.number===7){setVolume(e.value/127*100);return;}
-  if(e.number===14){if(soundBrowser.step('sound',relativePots.step(key,e.value)))queueSound();return;}
-  if(e.number===13){if(soundBrowser.step('role',relativePots.step(key,e.value)))queueSound();return;}
-  if(e.number===15){const step=relativePots.step(key,e.value);if(step)setTrackVolume(selectedTrack,trackVolumes[selectedTrack]+step);return;}
+  if(e.number===14){const step=relativePots.step(key,e.value);if(selectedEffect>=0)adjustEffect(1,step);else if(soundBrowser.step('sound',step))queueSound();return;}
+  if(e.number===13){const step=relativePots.step(key,e.value);if(selectedEffect>=0)adjustEffect(0,step);else if(soundBrowser.step('role',step))queueSound();return;}
+  if(e.number===15){const step=relativePots.step(key,e.value);if(selectedEffect>=0&&step){const current=EFFECTS.findIndex(e=>e.id===currentChain()[selectedEffect].type);setEffectType(EFFECTS[Math.max(0,Math.min(EFFECTS.length-1,current+step))].id);}return;}
  }
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
@@ -115,7 +121,7 @@ async function connect(){
  try{access??=await navigator.requestMIDIAccess({sysex:false});access.onstatechange=refreshInputs;refreshInputs();notice('');}
  catch(e){$('#midi-status').textContent='No se habilitó el acceso MIDI.';notice('MIDI: '+errorText(e)+'. Revisá el permiso del sitio; Firefox puede pedir un permiso adicional.');}
 }
-$('#power').onclick=async()=>{await activate();await connect();};
+$('#power').onclick=async()=>{try{await ensureLooper();await connect();}catch(e){notice(errorText(e));}};
 $('#connect').onclick=async()=>{await activate();await connect();};
 $('#midi-input').onchange=e=>{panic();selected=e.target.value;refreshInputs();};
 $('#volume').oninput=e=>setVolume(Number(e.target.value));
@@ -129,7 +135,7 @@ const keys=['KeyA','KeyW','KeyS','KeyE','KeyD','KeyF','KeyT','KeyG','KeyY','KeyH
 window.addEventListener('keydown',async e=>{
  if(e.code==='Escape'){silenceAll();if(learning)setLearning(learning);return;}
  if(e.ctrlKey||e.metaKey||e.altKey||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;
- const index=keys.indexOf(e.code);if(index<0||e.repeat)return;e.preventDefault();computer.add(e.code);
+ if(!sessionLoaded)return;const index=keys.indexOf(e.code);if(index<0||e.repeat)return;e.preventDefault();computer.add(e.code);
  if(context?.state==='running')on('computer:'+e.code,(octave+1)*12+index);else if(await activate())if(computer.has(e.code))on('computer:'+e.code,(octave+1)*12+index);
 });
 window.addEventListener('keyup',e=>{computer.delete(e.code);off('computer:'+e.code);});
@@ -142,52 +148,92 @@ let countInTrack=-1;
 async function ensureLooper(){
  if(!(await activate()))throw new Error('Activá el audio para grabar.');
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
+ if(looperStarting)return looperStarting;
  if(looper)return looper;
 
- if(!looperStarting)looperStarting=Looper.create(context,synth.input,synth.compressor,renderLoop,notice)
-   .then(value=>{looper=value;for(let i=1;i<trackNotes.length;i++)looper.command('add');for(let i=0;i<trackNotes.length;i++)looper.command('volume',i,trackVolumes[i]);looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
+ if(!looperStarting)looperStarting=Looper.create(context,synth.input,mixer,renderLoop,notice,onSnapshot)
+   .then(async value=>{looper=value;looper.route(trackNotes);if(pendingSnapshot){restoringAudio=true;$('#app').inert=true;try{const restored=await prepareRestore(pendingSnapshot,context.sampleRate);pendingSnapshot=null;await looper.restore(restored);for(let i=restored.tracks.length;i<trackNotes.length;i++)looper.command('add');}finally{restoringAudio=false;$('#app').inert=false;}}else{for(let i=1;i<trackNotes.length;i++)looper.command('add');looper.command('tempo',undefined,bpm);}return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
+function currentChain(){return chains[selectedTrack<0?0:trackNotes[selectedTrack]-30];}
 function addTrack(note){
- if(trackNotes.length>=16)return -1;
- const track=trackNotes.length;trackNotes.push(note);trackVolumes.push(70);
- syncTracks(trackNotes.length);if(looper)looper.command('add');
+ if(trackNotes.length>=7)return -1;
+ const track=trackNotes.length;trackNotes.push(note);
+ syncTracks(trackNotes.length);if(looper){looper.route(trackNotes);looper.command('add');}scheduleConfig();
  return track;
 }
 function selectTrack(track){
- if(track<0||track>=trackNotes.length)return;
- selectedTrack=track;
+ if(track< -1||track>=trackNotes.length)return;
+ selectedTrack=track;selectedEffect=-1;
  for(let i=0;i<trackCount;i++){
   const row=$('#track-'+i);row.classList.toggle('selected',i===track);
   row.querySelector('.loop-ring').setAttribute('aria-pressed',String(i===track));
  }
- $('#selected-track-number').textContent=String(trackNotes[track]-29);
- $('#track-volume').value=trackVolumes[track];
- $('#track-volume-value').textContent=trackVolumes[track]+'%';
-}
-function setTrackVolume(track,value){
- if(!Number.isFinite(value)||track<0||track>=trackNotes.length)return;
- const level=Math.max(0,Math.min(100,Math.round(value)));
- trackVolumes[track]=level;
- $('#track-'+track).querySelector('.track-volume').textContent=level+'%';
- if(track===selectedTrack){$('#track-volume').value=level;$('#track-volume-value').textContent=level+'%';}
- looper?.command('volume',track,level);
+ $('#master-track').classList.toggle('selected',track<0);
+ $('#master-select').setAttribute('aria-pressed',String(track<0));
+ mixer?.select(track<0?-1:trackNotes[track]-31);
+ renderEffects();scheduleConfig();
 }
 function handlePad(slot,down){
  if(!down){trackButtons.handle(slot,false);return;}
  if(trackButtons.held.has(slot))return;
- let track=trackNotes.indexOf(30+slot);
- if(track<0)track=addTrack(30+slot);
+ if(slot>=8){selectEffect(slot-8);trackButtons.suppress(slot);return;}
+ if(slot===0){
+  if(selectedTrack!==-1||selectedEffect>=0)selectTrack(-1);
+  else toggleMaster();
+  trackButtons.suppress(slot);return;
+ }
+ let track=trackNotes.indexOf(30+slot);if(track<0)track=addTrack(30+slot);
  if(track<0)return;
- if(track!==selectedTrack){selectTrack(track);trackButtons.suppress(slot);return;}
+ if(track!==selectedTrack||selectedEffect>=0){selectTrack(track);trackButtons.suppress(slot);return;}
  trackButtons.handle(slot,true);
 }
+async function toggleMaster(){try{const engine=await ensureLooper();engine.command(engine.state?.paused?'resume':'pause');}catch(e){notice(errorText(e));}}
 async function fixedTrackCommand(type,slot){
  const track=trackNotes.indexOf(30+slot);
- if(track>=0)return loopCommand(type,track);
+ if(slot>0&&slot<8&&track>=0)return loopCommand(type,track);
+}
+function renderEffects(){
+ $('#fx-track').textContent=selectedTrack<0?'Master':'Pista '+(trackNotes[selectedTrack]-29);
+ const chain=currentChain();
+ for(let i=0;i<8;i++){const b=$('#fx-slot-'+i);b.textContent=(i+1)+' · '+EFFECTS.find(e=>e.id===chain[i].type).name;b.setAttribute('aria-pressed',String(selectedEffect===i));}
+ $('#fx-editor').hidden=selectedEffect<0;
+ $('#fx-mode').textContent=selectedEffect<0?'Instrumentos · CC13 / CC14':'Efecto '+(selectedEffect+1)+' · CC15';
+ if(selectedEffect<0)return;
+ const s=chain[selectedEffect],def=EFFECTS.find(e=>e.id===s.type);$('#fx-type').value=s.type;
+ def.labels.forEach((label,i)=>{$('#fx-label-'+i).textContent=label;$('#fx-param-'+i).value=s.params[i];$('#fx-value-'+i).textContent=Math.round(s.params[i])+'%';$('#fx-param-'+i).disabled=s.type==='none';});
+ $('#fx-left').disabled=selectedEffect===0;$('#fx-right').disabled=selectedEffect===7;
+}
+function selectEffect(index){selectedEffect=index;renderEffects();}
+function applyEffects(){
+ clearTimeout(fxTimer);fxTimer=setTimeout(()=>{chains.forEach((c,i)=>mixer?.set(i-1,c));},100);scheduleConfig();renderEffects();
+}
+function setEffectType(type){
+ if(selectedEffect<0)return;const def=EFFECTS.find(e=>e.id===type);if(!def)return;
+ if(currentChain()[selectedEffect].type===type)return;
+ currentChain()[selectedEffect]={type,params:[...def.defaults]};applyEffects();
+}
+function adjustEffect(index,delta){
+ if(selectedEffect<0||!delta||currentChain()[selectedEffect].type==='none')return;
+ const s=currentChain()[selectedEffect];s.params[index]=Math.max(0,Math.min(100,s.params[index]+delta));applyEffects();
+}
+function moveEffect(delta){
+ const target=selectedEffect+delta;if(selectedEffect<0||target<0||target>7)return;
+ const c=currentChain();[c[target],c[selectedEffect]]=[c[selectedEffect],c[target]];selectedEffect=target;applyEffects();
+}
+function getConfig(){return {notes:[...trackNotes],selected:selectedTrack<0?-1:trackNotes[selectedTrack]-31,chains,bpm,volume,preset:preset.id,role:soundBrowser.role.id};}
+function scheduleConfig(){if(!sessionLoaded||!sessionWritable)return;session.configScheduled=true;clearTimeout(configTimer);configTimer=setTimeout(()=>{session.configScheduled=false;session.config(getConfig());},300);}
+function scheduleSnapshot(){
+ if(!sessionLoaded||!sessionWritable||!looper||pendingSnapshot)return;
+ clearTimeout(snapshotTimer);snapshotTimer=setTimeout(()=>{if(looper.state?.active>=0||looper.state?.pending>=0)return;looper.snapshot(++snapshotSerial);},400);
+}
+function onSnapshot(message){
+ session.snapshot(message,message.type==='snapshot-end'?getConfig():undefined);
+ if(message.type==='snapshot-cancel')scheduleSnapshot();
 }
 async function loopCommand(type,track){
  try{
+  if(pendingSnapshot)await ensureLooper();
   if(type==='record'||type==='trigger'){
    if(loopBusy)return;loopBusy=true;
    try{const engine=await ensureLooper();if(!document.hidden){
@@ -229,13 +275,17 @@ function renderLoop(state){
  }
  if(state.revision===lastLoopRevision)return;
  lastLoopRevision=state.revision;
+ session.capture=active||pending;
+ if(active||pending){$('#save-status').textContent='Toma en curso · guardado al cerrar';}else if(looper&&sessionLoaded&&!pendingSnapshot){session.audioDirty=true;scheduleSnapshot();}
  if(Number.isFinite(state.bpm))bpm=state.bpm;
  $('#tempo').value=bpm;
  $('#tempo').disabled=active||pending;
  $('#metronome').setAttribute('aria-pressed',String(!!state.metronome));
  $('#loop-transport').disabled=!state.length&&!active&&!pending&&!state.metronome;
  $('#loop-transport').textContent=state.paused?'Reanudar':'Pausar';
- $('#loop-reset').disabled=!state.length&&!active&&!pending;
+ $('#loop-reset').disabled=false;
+ $('#master-play').textContent=state.paused?'▶':'Ⅱ';
+ $('#master-track').querySelector('.ring-progress').style.strokeDashoffset=String(1-(state.length?state.position/state.length:0));
  for(let i=0;i<state.tracks.length;i++){
   const t=state.tracks[i],row=$('#track-'+i),record=row.querySelector('[data-loop-action="record"]'),mute=row.querySelector('[data-loop-action="mute"]'),clear=row.querySelector('[data-loop-action="clear"]');
   row.classList.toggle('recording',state.active===i);row.classList.toggle('muted',t.muted);row.classList.toggle('playing',t.hasAudio&&!t.muted&&!state.paused);
@@ -267,15 +317,22 @@ function syncTracks(count){
  while(trackCount<count){
   const i=trackCount++,row=document.createElement('article');
   row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackNotes[i]-29));
-  row.innerHTML="<button class=\"loop-ring\" data-select-track=\"0\" aria-label=\"Seleccionar pista 1\" aria-pressed=\"true\"><svg viewBox=\"0 0 72 72\" aria-hidden=\"true\"><circle class=\"ring-base\" cx=\"36\" cy=\"36\" r=\"31\"></circle><circle class=\"ring-progress\" cx=\"36\" cy=\"36\" r=\"31\" pathLength=\"1\"></circle></svg><span class=\"number\">01</span></button><div class=\"track-body\"><div class=\"track-top\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span><output class=\"track-volume\">70%</output></div><div class=\"track-actions\"><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><div class=\"track-duration\"><button data-loop-action=\"shorten\" data-track=\"0\" aria-label=\"Acortar ciclo de pista 1\" disabled>‹</button><button data-loop-action=\"lengthen\" data-track=\"0\" aria-label=\"Alargar ciclo de pista 1\" disabled>›</button></div><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace(/data-select-track="0"/g,'data-select-track="'+i+'"').replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
+  row.innerHTML="<button class=\"loop-ring\" data-select-track=\"0\" aria-label=\"Seleccionar pista 1\" aria-pressed=\"true\"><svg viewBox=\"0 0 72 72\" aria-hidden=\"true\"><circle class=\"ring-base\" cx=\"36\" cy=\"36\" r=\"31\"></circle><circle class=\"ring-progress\" cx=\"36\" cy=\"36\" r=\"31\" pathLength=\"1\"></circle></svg><span class=\"number\">01</span></button><div class=\"track-body\"><div class=\"track-top\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span><output class=\"track-volume\"></output></div><div class=\"track-actions\"><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><div class=\"track-duration\"><button data-loop-action=\"shorten\" data-track=\"0\" aria-label=\"Acortar ciclo de pista 1\" disabled>‹</button><button data-loop-action=\"lengthen\" data-track=\"0\" aria-label=\"Alargar ciclo de pista 1\" disabled>›</button></div><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace(/data-select-track="0"/g,'data-select-track="'+i+'"').replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
   $('#tracks').append(row);bindTrack(row);
  }
  while(trackCount>count){$('#track-'+(--trackCount)).remove();}
- $('#add-track').disabled=trackCount>=16;renderMappings();selectTrack(Math.min(selectedTrack,trackCount-1));
+ $('#add-track').disabled=trackCount>=7;renderMappings();selectTrack(Math.min(selectedTrack,trackCount-1));
 }
 bindTrack($('#track-0'));
-$('#add-track').onclick=()=>{if(trackNotes.length>=16)return;let note=30;while(trackNotes.includes(note))note++;selectTrack(addTrack(note));};
-$('#track-volume').oninput=e=>setTrackVolume(selectedTrack,Number(e.target.value));
+$('#add-track').onclick=()=>{if(trackNotes.length>=7)return;let note=31;while(trackNotes.includes(note))note++;selectTrack(addTrack(note));};
+$('#master-select').onclick=()=>selectTrack(-1);
+$('#master-play').onclick=toggleMaster;
+for(let i=0;i<8;i++)$('#fx-slot-'+i).onclick=()=>selectEffect(i);
+for(const def of EFFECTS){const o=document.createElement('option');o.value=def.id;o.textContent=def.name;$('#fx-type').append(o);}
+$('#fx-type').onchange=e=>setEffectType(e.target.value);
+for(let i=0;i<2;i++)$('#fx-param-'+i).oninput=e=>{if(selectedEffect<0)return;currentChain()[selectedEffect].params[i]=Number(e.target.value);applyEffects();};
+$('#fx-left').onclick=()=>moveEffect(-1);$('#fx-right').onclick=()=>moveEffect(1);
+$('#fx-close').onclick=()=>selectTrack(selectedTrack);
 let metroBusy=false;
 $('#metronome').onclick=async()=>{
  if(metroBusy)return;metroBusy=true;
@@ -285,11 +342,11 @@ $('#metronome').onclick=async()=>{
 $('#tempo').onchange=event=>{
  const value=Number(event.target.value);
  if(!Number.isFinite(value)||value<40||value>240){event.target.value=bpm;return;}
- if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 4 compases · '+(16*60/bpm).toFixed(1)+' s';}
+ if(looper)looper.command('tempo',undefined,value);else{bpm=value;if(pendingSnapshot)pendingSnapshot.bpm=value;scheduleConfig();$('#loop-time').textContent='Base 4 compases · '+(16*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
-$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);trackVolumes.splice(0,trackVolumes.length,70);selectedTrack=0;syncTracks(1);setTrackVolume(0,70);loopCommand('reset');selectTrack(0);}};
-window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;pendingSnapshot=null;sessionWritable=true;trackNotes.splice(0,trackNotes.length,31);chains=Array.from({length:8},emptyChain);selectedTrack=-1;syncTracks(1);chains.forEach((c,i)=>mixer?.set(i-1,c));loopCommand('reset');selectTrack(-1);if(!looper){session.snapshot({type:'snapshot-start',id:++snapshotSerial,snapshot:{version:1,rate:48000,bpm,referenceBpm:bpm,transport:0,tracks:[{hasAudio:false,bars:0,audioLength:0,muted:false}]}});session.snapshot({type:'snapshot-end',id:snapshotSerial},getConfig());}}};
+window.addEventListener('beforeunload',event=>{if(session.dirty||looper?.state?.active>=0){event.preventDefault();event.returnValue='';}});
 for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
 $('#sound-role').onchange=event=>{const index=soundBrowser.roles.findIndex(r=>r.id===event.target.value);if(soundBrowser.selectRole(index))setPreset(soundBrowser.preset);};
 $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);if(p)setPreset(p);};
@@ -317,6 +374,7 @@ async function refreshCatalog(){
 $('#catalog-retry').onclick=refreshCatalog;
 refreshCatalog();
 
+renderEffects();
 renderLoop({length:0,position:0,seconds:0,elapsed:0,active:-1,paused:false,revision:0,message:'',tracks:Array.from({length:1},()=>({hasAudio:false,muted:false,mode:'empty'}))});
 if(!window.isSecureContext)notice('Abrí la dirección HTTPS para usar MIDI y grabar.');
 if(window.isSecureContext&&navigator.permissions){navigator.permissions.query({name:'midi',sysex:false}).then(p=>{if(p.state==='granted')connect();}).catch(()=>{});}
@@ -348,3 +406,23 @@ $('#direct-midi-click').onchange=e=>{panic();directMidiClick=e.target.checked;la
 $('#test-click').onpointerdown=async e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();if(await activate())synth.testClick();};
 $('#test-click').onclick=async e=>{if(e.detail===0&&await activate())synth.testClick();};
 $('#reset-performance').onclick=()=>{latencyStats.reset();showPerformance();};
+
+async function restoreLocal(){
+ try{
+  const saved=await session.load();
+  if(saved){
+   const config=cleanConfig(saved.config);
+   if(saved.snapshot){validateSnapshot(saved.snapshot);if(saved.snapshot.tracks.length!==config.notes.length)throw Error('Sesión local incompleta.');pendingSnapshot={...saved.snapshot,bpm:config.bpm};}
+   trackNotes.splice(0,trackNotes.length,...config.notes);chains=config.chains;bpm=config.bpm;$('#tempo').value=bpm;$('#loop-time').textContent='Base 4 compases · '+(960/bpm).toFixed(1)+' s';setVolume(config.volume);syncTracks(trackNotes.length);
+   const p=PRESETS.find(p=>p.id===config.preset);if(p)setPreset(p);
+   selectTrack(config.selected<0?-1:Math.max(0,trackNotes.indexOf(config.selected+31)));
+   if(pendingSnapshot){
+    const s=pendingSnapshot,bar=s.rate*240/s.referenceBpm,length=Math.max(0,...s.tracks.map(t=>t.bars*bar));
+    renderLoop({revision:-2,length,position:0,seconds:length/s.rate,baseSeconds:960/s.bpm,speed:s.bpm/s.referenceBpm,bpm:s.bpm,elapsed:0,active:-1,pending:-1,paused:true,tracks:s.tracks.map(t=>({...t,length:t.bars*bar,canOverdub:t.bars*bar<=s.rate*60,position:0}))});
+   }
+   $('#save-status').textContent='Sesión recuperada · activá audio';
+  }else $('#save-status').textContent='Guardado local listo';
+ }catch(e){sessionWritable=false;notice('No se pudo recuperar la sesión: '+errorText(e));$('#save-status').textContent='Guardado local no disponible';}
+ finally{sessionLoaded=true;$('#app').inert=false;}
+}
+restoreLocal();

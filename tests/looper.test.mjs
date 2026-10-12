@@ -9,8 +9,8 @@ function waitStart(c){if(c.pending>=0)advance(c,Math.ceil((c.pendingAt-c.transpo
 function record(c,i,samples){prepare(c,i);c.command({type:'record',track:i});waitStart(c);run(c,samples);c.command({type:'stop'});}
 test('dynamic tracks and buffer allocation remain lazy',()=>{
  const c=core();for(let i=0;i<30;i++)c.command({type:'add'});
- assert.equal(c.tracks.length,16);assert.ok(c.tracks.every(t=>t.data===null));
- record(c,15,Array(8).fill(.1));assert.equal(c.tracks[15].bars,1);
+ assert.equal(c.tracks.length,7);assert.ok(c.tracks.every(t=>t.data===null));
+ record(c,6,Array(8).fill(.1));assert.equal(c.tracks[6].bars,1);
  c.command({type:'reset'});assert.equal(c.tracks.length,1);assert.equal(c.transport,0);
 });
 test('capture stops immediately, cycle rounds upward, silence is virtual',()=>{
@@ -237,4 +237,13 @@ test('four-bar guide survives closing the first take and per-track phase follows
  const c=core();assert.equal(c.state().baseSeconds,8);
  record(c,0,Array(100).fill(.2));assert.equal(c.state().baseSeconds,8);
  advance(c,250);assert.equal(c.state().tracks[0].position,c.transport%c.tracks[0].length);
+});
+
+test('independent track outputs remain phase aligned and master output only carries click',()=>{
+ const c=core();record(c,0,Array(2000).fill(.2));record(c,1,Array(2000).fill(.4));advance(c,100);
+ const output=new Float32Array(128),tracks=Array.from({length:7},()=>new Float32Array(128));
+ c.process(new Float32Array(128),output,tracks);
+ assert.ok(output.every(v=>v===0));assert.ok(tracks[0].every(v=>Math.abs(v-.2)<1e-6));assert.ok(tracks[1].every(v=>Math.abs(v-.4)<1e-6));assert.ok(tracks[2].every(v=>v===0));
+ c.command({type:'mute',track:0});advance(c,100);c.process(new Float32Array(128),output,tracks);
+ assert.ok(tracks[0].every(v=>v===0));assert.ok(tracks[1].every(v=>Math.abs(v-.4)<1e-6));
 });

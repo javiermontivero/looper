@@ -12,7 +12,7 @@ export class LoopCore {
   for(let i=0;i<this.click.length;i++){const t=i/rate;this.click[i]=.18*Math.sin(2*Math.PI*1000*t)*Math.min(1,t/.001)*Math.exp(-t*240);}
   this.clickIndex=this.click.length;
  }
- touch(message=''){this.revision++;this.message=message;this.renderTracks=this.tracks.filter(t=>t.hasAudio);this.nextChange=Math.min(Infinity,...this.renderTracks.filter(t=>t.pendingBars).map(t=>t.changeAt));}
+ touch(message=''){this.revision++;this.message=message;this.tracks.forEach((t,i)=>t.outputIndex=i);this.renderTracks=this.tracks.filter(t=>t.hasAudio);this.nextChange=Math.min(Infinity,...this.renderTracks.filter(t=>t.pendingBars).map(t=>t.changeAt));}
  get barLength(){return this.rate*240/this.referenceBpm;}
  phase(length){const p=this.transport%length;return p<1e-7||length-p<1e-7?0:p;}
  boundary(length){return (Math.floor((this.transport+1e-7)/length)+1)*length;}
@@ -54,7 +54,14 @@ export class LoopCore {
  captureLimit(){return this.capacity;}
  command(c){
   if(!c||typeof c.type!=='string')return;
-  if(c.type==='add'){if(this.tracks.length<16){this.tracks.push(emptyTrack());this.touch();}return;}
+  if(c.type==='restore'){
+   const s=c.snapshot;if(!s||!Array.isArray(s.tracks)||s.tracks.length<1||s.tracks.length>7)return;
+   this.command({type:'reset'});this.bpm=s.bpm;this.referenceBpm=s.referenceBpm;this.speed=this.bpm/this.referenceBpm;
+   this.transport=Math.max(0,s.transport||0);this.baseLength=this.barLength*4;
+   this.tracks=s.tracks.map(t=>({...emptyTrack(),data:t.data,hasAudio:!!t.hasAudio,audioLength:t.audioLength,bars:t.bars,length:t.hasAudio?t.bars*this.barLength:0,muted:!!t.muted,gain:t.muted?0:1,edge:Math.ceil(this.rate*.002),mode:t.hasAudio?'playing':'empty'}));
+   this.paused=true;this.touch();this.recalculate();this.touch();return;
+  }
+  if(c.type==='add'){if(this.tracks.length<7){this.tracks.push(emptyTrack());this.touch();}return;}
   if(c.type==='metronome'){if(typeof c.value==='boolean'){this.metronome=c.value;if(!this.countInRemaining){this.clickIndex=this.click.length;}this.touch();}return;}
   if(c.type==='tempo'){
    if(!Number.isFinite(c.value)||c.value<40||c.value>240)return;
@@ -126,7 +133,8 @@ export class LoopCore {
   t.hasAudio=true;t.mode='playing';this.active=-1;this.captured=0;this.closingAt=0;
   this.recalculate();this.touch();
  }
- process(input,output){
+ process(input,output,trackOutputs){
+  if(trackOutputs)for(const out of trackOutputs)out?.fill(0);
   if(!this.metronome&&!this.countInRemaining&&(this.paused||(!this.length&&this.active<0))){output.fill(0);return;}
   const ramp=1/Math.max(1,this.rate*.005);
   for(let frame=0;frame<output.length;frame++){
@@ -154,7 +162,8 @@ export class LoopCore {
      const envelope=edge?Math.max(0,Math.min(1,position/edge,(end-1-position)/edge)):1;
      const first=index<end?(t.data[index]||0):0;
      const next=index+1<end?(t.data[index+1]||0):0;
-     output[frame]+=(first*(1-fraction)+next*fraction)*t.gain*envelope;
+     const value=(first*(1-fraction)+next*fraction)*t.gain*envelope;
+     const separate=trackOutputs?.[t.outputIndex];if(separate)separate[frame]+=value;else output[frame]+=value;
     }
     if(t===recording)this.write(t,position,this.speed,sample,true);
    }

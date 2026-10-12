@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+test('worker stores complete audio atomically, keeps it on quota failure and grows empty tracks',async()=>{
+ const source=await readFile(new URL('../public/session-worker.js',import.meta.url),'utf8'),messages=[];
+ const stores={meta:new Map(),audio:new Map()};let fail=false;
+ const database={createObjectStore(){},transaction(names,mode){
+  const copy=Object.fromEntries(Object.entries(stores).map(([name,map])=>[name,new Map(map)]));
+  const tx={objectStore(name){return {get(key){const req={};queueMicrotask(()=>req.result=structuredClone(copy[name].get(key)));return req;},getAll(){const req={};queueMicrotask(()=>req.result=[...copy[name].values()].map(v=>structuredClone(v)));return req;},put(value,key){copy[name].set(key,structuredClone(value));},clear(){copy[name].clear();}};}};
+  setImmediate(()=>{if(fail&&mode==='readwrite'){fail=false;tx.error=Error('QuotaExceeded');tx.onabort?.();}else{if(mode==='readwrite')for(const name of names)stores[name]=copy[name];tx.oncomplete?.();}});
+  return tx;
+ }};
+ const indexedDB={open(){const req={};queueMicrotask(()=>{req.result=database;req.onsuccess();});return req;}},self={};
+ vm.runInNewContext(source,{self,indexedDB,Float32Array,Error,postMessage:(m,transfer)=>messages.push(structuredClone(m,{transfer:transfer||[]}))});
+ const send=async m=>{self.onmessage({data:m});for(let i=0;i<6;i++)await new Promise(setImmediate);};
+ const config={notes:[31],chains:[],bpm:120};
+ const snapshot={version:1,rate:8000,bpm:120,referenceBpm:120,transport:0,tracks:[{hasAudio:true,bars:1,audioLength:3,muted:false}]};
+ await send({type:'snapshot-start',id:1,snapshot});
+ await send({type:'snapshot-chunk',id:1,track:0,offset:0,data:new Float32Array([.2,.3,.4])});
+ await send({type:'snapshot-end',id:1,config});
+ assert.ok(messages.some(m=>m.event==='saved'));
+ await send({type:'load',request:1});
+ const saved=messages.find(m=>m.request===1).value;assert.equal(saved.snapshot.tracks[0].data.length,3);
+ assert.ok(Math.abs(saved.snapshot.tracks[0].data[1]-.3)<1e-6);
+ fail=true;await send({type:'config',config:{...config,bpm:240}});
+ assert.ok(messages.some(m=>m.event==='error'&&/Quota/.test(m.error)));
+ await send({type:'load',request:2});assert.equal(messages.find(m=>m.request===2).value.config.bpm,120);
+ await send({type:'config',config:{...config,notes:[31,37]}});
+ await send({type:'load',request:3});
+ const grown=messages.find(m=>m.request===3).value;
+ assert.equal(grown.snapshot.tracks.length,2);assert.equal(grown.snapshot.tracks[0].data.length,3);assert.equal(grown.snapshot.tracks[1].data.length,0);
+});

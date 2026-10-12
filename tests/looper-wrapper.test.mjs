@@ -10,7 +10,7 @@ test('track count includes queued additions before worklet state arrives and res
   connect(){}
  };
  try{
-  const looper=new Looper({sampleRate:1000},{connect(){}},{},()=>{},()=>{});
+  const looper=new Looper({sampleRate:1000},{connect(){}},{master:{input:{}}},()=>{},()=>{});
   assert.equal(looper.trackCount,1);
   looper.command('add');looper.command('add');
   assert.equal(looper.trackCount,3);
@@ -19,8 +19,8 @@ test('track count includes queued additions before worklet state arrives and res
   for(let i=looper.trackCount;i<=2;i++)looper.command('add');
   assert.equal(messages.filter(m=>m.type==='add').length,2);
   for(let i=0;i<20;i++)looper.command('add');
-  assert.equal(looper.trackCount,16);
-  assert.equal(messages.filter(m=>m.type==='add').length,15);
+  assert.equal(looper.trackCount,7);
+  assert.equal(messages.filter(m=>m.type==='add').length,6);
   looper.command('reset');assert.equal(looper.trackCount,1);
   looper.command('add');assert.equal(looper.trackCount,2);
  }finally{
