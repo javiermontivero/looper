@@ -11,7 +11,7 @@ let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'
 const savedCatalogPreset=read('looper:catalog-preset',null)||read('looper:preset','piano');
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
 const relativePots=new RelativePots();
-let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{}),rememberedPages:read('looper:role-pages',{})});
+let soundBrowser=new SoundBrowser(PRESETS,{presetId:preset.id,roleId:read('looper:role',null),remembered:read('looper:role-presets',{})});
 let soundTimer,shownRole,presetChanges=0;
 let volume=Number(read('looper:volume',65));if(!Number.isFinite(volume))volume=65;volume=Math.max(0,Math.min(100,volume));
 const latencyStats=new LatencyStats();
@@ -25,7 +25,8 @@ if(typeof PerformanceObserver==='function'&&PerformanceObserver.supportedEntryTy
  observer.observe({type:'longtask',buffered:false});
 }
 const latches=new Map(),computer=new Set();
-const trackNotes=[30];
+const trackNotes=[30],trackVolumes=[70];
+let selectedTrack=0;
 const trackButtons=new TrackButtons(fixedTrackCommand,{onError:error=>notice('MIDI: '+errorText(error))});
 function notice(message){$('#notice').hidden=!message;$('#notice').textContent=message;}
 function errorText(error){return error?.message||String(error);}
@@ -39,16 +40,12 @@ async function activate(){
  finally{starting=null;}})();return starting;
 }
 function renderSoundChoice(){
- const role=soundBrowser.role,page=soundBrowser.page;$('#sound-role').value=role.id;
- if(shownRole!==page.id){
-  $('#sound-page').replaceChildren();
-  role.pages.forEach((p,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=(i+1)+'/'+role.pages.length;$('#sound-page').append(option);});
+ const role=soundBrowser.role;$('#sound-role').value=role.id;
+ if(shownRole!==role.id){
   $('#sound').replaceChildren();
-  for(const p of page.presets){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;$('#sound').append(option);}
-  shownRole=page.id;
+  for(const p of role.presets){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;$('#sound').append(option);}
+  shownRole=role.id;
  }
- $('#sound-page').value=String(soundBrowser.pageIndex);
- $('#sound-page').disabled=role.pages.length===1;
  $('#sound').value=soundBrowser.preset.id;
 }
 function setPreset(p){
@@ -56,7 +53,7 @@ function setPreset(p){
  clearTimeout(soundTimer);soundTimer=null;
  const changed=preset.id!==p.id;preset=p;soundBrowser.choose(p.id);
  if(synth&&changed)synth.selectPreset(p);
- renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);save('looper:role-pages',soundBrowser.rememberedPages);
+ renderSoundChoice();save('looper:preset',p.id);if(presetChanges>1)save('looper:catalog-preset',p.id);save('looper:role',soundBrowser.role.id);save('looper:role-presets',soundBrowser.remembered);
 }
 function queueSound(){
  renderSoundChoice();clearTimeout(soundTimer);
@@ -76,20 +73,20 @@ function process(event,device){
  const e=decode(event.data);if(!e)return;
  if(e.type==='on'&&Number.isFinite(event.timeStamp)){const delay=performance.now()-event.timeStamp;if(delay>=0&&delay<10000){lastMidiDelay=delay;latencyStats.add('delivery',delay);}}const channel=device+':'+e.channel,key=channel+':'+e.number;
  // Reserve pad notes 30..45 on channel 10 before MIDI learn and instrument playback.
- if((e.type==='on'||e.type==='off')&&e.channel===9&&e.number>=30&&e.number<=45){trackButtons.handle(e.number-30,buttonDown(e));return;}
+ if((e.type==='on'||e.type==='off')&&e.channel===9&&e.number>=30&&e.number<=45){handlePad(e.number-30,buttonDown(e));return;}
  // Relative navigation pots and master slider precede learned mappings.
  if(e.type==='cc'&&e.channel===0){
   if(e.number===7){setVolume(e.value/127*100);return;}
-  if(e.number===14){if(soundBrowser.step('page',relativePots.step(key,e.value)))queueSound();return;}
+  if(e.number===14){if(soundBrowser.step('sound',relativePots.step(key,e.value)))queueSound();return;}
   if(e.number===13){if(soundBrowser.step('role',relativePots.step(key,e.value)))queueSound();return;}
-  if(e.number===15){if(soundBrowser.step('sound',relativePots.step(key,e.value)))queueSound();return;}
+  if(e.number===15){const step=relativePots.step(key,e.value);if(step)setTrackVolume(selectedTrack,trackVolumes[selectedTrack]+step);return;}
  }
  if(learning){const m=learnMapping(learning,e,device);if(m){const action=learning;for(const a of Object.keys(mappings))if(matches(mappings[a],e,device))delete mappings[a];mappings[action]=m;latches.set(action,buttonDown(e));save('looper:mappings',mappings);setLearning(null);if(action.startsWith('track')&&buttonDown(e))trackButtons.suppress(Number(action.slice(5)));off(key);return;}}
  for(const action of midiActions){if(action.startsWith('track')&&Number(action.slice(5))>=trackCount)continue;if(!matches(mappings[action],e,device))continue;
   if(action==='volume'){setVolume(e.value/127*100);return;}
   const down=buttonDown(e);
   if(action.startsWith('track')){trackButtons.handle(Number(action.slice(5)),down);return;}
-  if(down&&!latches.get(action)){{const list=soundBrowser.page.presets,i=list.indexOf(soundBrowser.preset);setPreset(list[(i+(action==='next'?1:-1)+list.length)%list.length]);}}
+  if(down&&!latches.get(action)){{const list=soundBrowser.role.presets,i=list.indexOf(soundBrowser.preset);setPreset(list[(i+(action==='next'?1:-1)+list.length)%list.length]);}}
   latches.set(action,down);return;
  }
  if(e.type==='on')on(key,e.number,e.value,channel);
@@ -146,27 +143,48 @@ async function ensureLooper(){
  if(!(await activate()))throw new Error('Activá el audio para grabar.');
  if(document.hidden)throw new Error('Volvé a la app para comenzar a grabar.');
  if(looper)return looper;
- const requestedTracks=trackCount;
+
  if(!looperStarting)looperStarting=Looper.create(context,synth.input,synth.compressor,renderLoop,notice)
-   .then(value=>{looper=value;for(let i=1;i<requestedTracks;i++)looper.command('add');looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
+   .then(value=>{looper=value;for(let i=1;i<trackNotes.length;i++)looper.command('add');for(let i=0;i<trackNotes.length;i++)looper.command('volume',i,trackVolumes[i]);looper.command('tempo',undefined,bpm);return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
-async function fixedTrackCommand(type,slot){
- const note=30+slot;
- let track=trackNotes.indexOf(note);
- if(track<0){
-  if(type!=='trigger')return;
-  try{
-   const engine=await ensureLooper();
-   if(document.hidden)return;
-   track=trackNotes.indexOf(note);
-   if(track<0){
-    if(trackNotes.length>=16)return;
-    track=trackNotes.length;trackNotes.push(note);engine.command('add');
-   }
-  }catch(e){notice('Looper: '+errorText(e));return;}
+function addTrack(note){
+ if(trackNotes.length>=16)return -1;
+ const track=trackNotes.length;trackNotes.push(note);trackVolumes.push(70);
+ syncTracks(trackNotes.length);if(looper)looper.command('add');
+ return track;
+}
+function selectTrack(track){
+ if(track<0||track>=trackNotes.length)return;
+ selectedTrack=track;
+ for(let i=0;i<trackCount;i++){
+  const row=$('#track-'+i);row.classList.toggle('selected',i===track);
+  row.querySelector('.loop-ring').setAttribute('aria-pressed',String(i===track));
  }
- return loopCommand(type,track);
+ $('#selected-track-number').textContent=String(trackNotes[track]-29);
+ $('#track-volume').value=trackVolumes[track];
+ $('#track-volume-value').textContent=trackVolumes[track]+'%';
+}
+function setTrackVolume(track,value){
+ if(!Number.isFinite(value)||track<0||track>=trackNotes.length)return;
+ const level=Math.max(0,Math.min(100,Math.round(value)));
+ trackVolumes[track]=level;
+ $('#track-'+track).querySelector('.track-volume').textContent=level+'%';
+ if(track===selectedTrack){$('#track-volume').value=level;$('#track-volume-value').textContent=level+'%';}
+ looper?.command('volume',track,level);
+}
+function handlePad(slot,down){
+ if(!down){trackButtons.handle(slot,false);return;}
+ if(trackButtons.held.has(slot))return;
+ let track=trackNotes.indexOf(30+slot);
+ if(track<0)track=addTrack(30+slot);
+ if(track<0)return;
+ if(track!==selectedTrack){selectTrack(track);trackButtons.suppress(slot);return;}
+ trackButtons.handle(slot,true);
+}
+async function fixedTrackCommand(type,slot){
+ const track=trackNotes.indexOf(30+slot);
+ if(track>=0)return loopCommand(type,track);
 }
 async function loopCommand(type,track){
  try{
@@ -180,7 +198,7 @@ async function loopCommand(type,track){
 function silenceAll(){panic();if(looper)loopCommand('pause');}
 function renderLoop(state){
  const active=state.active>=0,pending=(state.pending??-1)>=0;
- syncTracks(state.tracks.length);
+ syncTracks(Math.max(state.tracks.length,trackNotes.length));
 
  const elapsed=active?state.elapsed:state.position/(context?.sampleRate||48000)/(state.speed||1);
  const base=state.baseSeconds||16*60/bpm;
@@ -202,7 +220,10 @@ function renderLoop(state){
  }else countInTrack=-1;
 
  for(let i=0;i<state.tracks.length;i++){
-  const t=state.tracks[i];
+  const t=state.tracks[i],row=$('#track-'+i);
+  const phase=state.pending===i&&state.countInRemaining>0?1-state.countInRemaining/state.countInTotal:
+   state.active===i&&!t.hasAudio?(state.elapsed%base)/base:t.length?(t.position||0)/t.length:0;
+  row.querySelector('.ring-progress').style.strokeDashoffset=String(1-Math.max(0,Math.min(1,phase)));
   const label=$('#track-'+i).querySelector('.track-length'),text=state.active===i?state.elapsed.toFixed(1)+' s':t.hasAudio?(t.pendingBars?t.bars+' → '+t.pendingBars:t.bars)+(t.bars===1&&!t.pendingBars?' compás':' compases'):'';
   if(label.textContent!==text)label.textContent=text;
  }
@@ -233,10 +254,11 @@ function renderLoop(state){
 
 }
 function bindTrack(row){
+ row.querySelector('.loop-ring').onclick=()=>selectTrack(Number(row.id.slice(6)));
  for(const b of row.querySelectorAll('[data-loop-action]'))b.onclick=()=>{
   const type=b.dataset.loopAction,track=Number(b.dataset.track);
   if(type==='clear'&&!confirm('¿Borrar el audio de la pista '+(trackNotes[track]-29)+'?'))return;
-  loopCommand(type,track);
+  selectTrack(track);loopCommand(type,track);
  };
  for(const b of row.querySelectorAll('[data-learn]'))b.onclick=()=>setLearning(b.dataset.learn);
 }
@@ -245,14 +267,15 @@ function syncTracks(count){
  while(trackCount<count){
   const i=trackCount++,row=document.createElement('article');
   row.className='track';row.id='track-'+i;row.setAttribute('aria-label','Pista '+(trackNotes[i]-29));
-  row.innerHTML="<div class=\"track-main\"><span class=\"number\">01</span><span class=\"track-info\"><span class=\"track-state\"></span></span><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><span class=\"hint\">Nota 30</span><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div><div class=\"track-duration\"><button data-loop-action=\"shorten\" data-track=\"0\" aria-label=\"Acortar ciclo de pista 1\" disabled>‹</button><span class=\"track-length\" aria-label=\"Duración de la pista\"></span><button data-loop-action=\"lengthen\" data-track=\"0\" aria-label=\"Alargar ciclo de pista 1\" disabled>›</button></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace('Nota 30','Nota '+trackNotes[i]).replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace(/Pista 1/g,'Pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
+  row.innerHTML="<button class=\"loop-ring\" data-select-track=\"0\" aria-label=\"Seleccionar pista 1\" aria-pressed=\"true\"><svg viewBox=\"0 0 72 72\" aria-hidden=\"true\"><circle class=\"ring-base\" cx=\"36\" cy=\"36\" r=\"31\"></circle><circle class=\"ring-progress\" cx=\"36\" cy=\"36\" r=\"31\" pathLength=\"1\"></circle></svg><span class=\"number\">01</span></button><div class=\"track-body\"><div class=\"track-top\"><span class=\"track-state\"></span><span class=\"track-length\" aria-label=\"Duración de la pista\"></span><output class=\"track-volume\">70%</output></div><div class=\"track-actions\"><button class=\"record\" data-loop-action=\"record\" data-track=\"0\" aria-label=\"Grabar o cerrar pista 1\" aria-pressed=\"false\">Grabar</button><button class=\"mute icon\" data-loop-action=\"mute\" data-track=\"0\" aria-label=\"Encender o apagar pista 1\" disabled>▶</button><details><summary aria-label=\"Opciones de pista 1\">⋯</summary><div class=\"track-menu\"><div class=\"track-duration\"><button data-loop-action=\"shorten\" data-track=\"0\" aria-label=\"Acortar ciclo de pista 1\" disabled>‹</button><button data-loop-action=\"lengthen\" data-track=\"0\" aria-label=\"Alargar ciclo de pista 1\" disabled>›</button></div><button data-loop-action=\"clear\" data-track=\"0\" disabled>Borrar</button></div></details></div></div>".replace(/data-track="0"/g,'data-track="'+i+'"').replace(/data-select-track="0"/g,'data-select-track="'+i+'"').replace(/pista 1/g,'pista '+(trackNotes[i]-29)).replace('>01<','>'+String(trackNotes[i]-29).padStart(2,'0')+'<');
   $('#tracks').append(row);bindTrack(row);
  }
  while(trackCount>count){$('#track-'+(--trackCount)).remove();}
- $('#add-track').disabled=trackCount>=16;renderMappings();
+ $('#add-track').disabled=trackCount>=16;renderMappings();selectTrack(Math.min(selectedTrack,trackCount-1));
 }
 bindTrack($('#track-0'));
-$('#add-track').onclick=()=>{if(trackNotes.length>=16)return;let note=30;while(trackNotes.includes(note))note++;trackNotes.push(note);if(looper)looper.command('add');else syncTracks(trackNotes.length);};
+$('#add-track').onclick=()=>{if(trackNotes.length>=16)return;let note=30;while(trackNotes.includes(note))note++;selectTrack(addTrack(note));};
+$('#track-volume').oninput=e=>setTrackVolume(selectedTrack,Number(e.target.value));
 let metroBusy=false;
 $('#metronome').onclick=async()=>{
  if(metroBusy)return;metroBusy=true;
@@ -265,10 +288,9 @@ $('#tempo').onchange=event=>{
  if(looper)looper.command('tempo',undefined,value);else{bpm=value;$('#loop-time').textContent='Base 4 compases · '+(16*60/bpm).toFixed(1)+' s';}
 };
 $('#loop-transport').onclick=()=>loopCommand(looper?.state?.paused?'resume':'pause');
-$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);loopCommand('reset');}};
+$('#loop-reset').onclick=()=>{if(confirm('¿Borrar todas las pistas y empezar una sesión nueva?')){trackButtons.reset();learning=null;trackNotes.splice(0,trackNotes.length,30);trackVolumes.splice(0,trackVolumes.length,70);selectedTrack=0;syncTracks(1);setTrackVolume(0,70);loopCommand('reset');selectTrack(0);}};
 window.addEventListener('beforeunload',event=>{if(looper?.hasAudio){event.preventDefault();event.returnValue='';}});
 for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
-$('#sound-page').onchange=event=>{if(soundBrowser.selectPage(Number(event.target.value)))setPreset(soundBrowser.preset);};
 $('#sound-role').onchange=event=>{const index=soundBrowser.roles.findIndex(r=>r.id===event.target.value);if(soundBrowser.selectRole(index))setPreset(soundBrowser.preset);};
 $('#sound').onchange=event=>{const p=PRESETS.find(p=>p.id===event.target.value);if(p)setPreset(p);};
 $('#settings-open').onclick=()=>$('#settings').showModal();
@@ -283,7 +305,7 @@ async function refreshCatalog(){
   const result=await loadInstrumentCatalog();
   const wanted=soundTimer?soundBrowser.preset:presetChanges===before?PRESETS.find(p=>p.id===savedId)||preset:preset;
   const remembered={...read('looper:role-presets',{}),...soundBrowser.remembered};
-  soundBrowser=new SoundBrowser(PRESETS,{presetId:wanted.id,roleId:soundBrowser.role.id,remembered,rememberedPages:soundBrowser.rememberedPages});
+  soundBrowser=new SoundBrowser(PRESETS,{presetId:wanted.id,roleId:soundBrowser.role.id,remembered});
   $('#sound-role').replaceChildren();
   for(const role of soundBrowser.roles){const option=document.createElement('option');option.value=role.id;option.textContent=role.name;$('#sound-role').append(option);}
   shownRole=null;setPreset(wanted);

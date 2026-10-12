@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GM_NAMES,GM_KITS,FAMILIES,soundfonts,discoverCatalog,musicalRoles,mapDrumGroups,title} from '../public/catalog.js';
 import {PRESETS} from '../public/instruments.js';
-import {buildRoles,potIndex} from '../public/sound-browser.js';
+import {buildRoles} from '../public/sound-browser.js';
 test('complete GM banks preserve legacy IDs without duplicate instrument/bank pairs',()=>{
  assert.equal(GM_NAMES.length,128);assert.equal(new Set(GM_NAMES).size,128);
  const gm=PRESETS.filter(p=>p.engine==='soundfont'&&p.kit!=='Tabla');
@@ -27,28 +27,12 @@ test('unavailable and stalled catalogs do not hide working families',async()=>{
  assert.equal(result.presets.length,1);assert.equal(result.presets[0].id,'electric:CP80');
  assert.equal(result.issues.length,FAMILIES.length-1);
 });
-test('large catalogs remain completely reachable in both directions using three absolute pots',()=>{
+test('all catalog instruments belong to one or more unpaginated musical categories',()=>{
  const extra=Array.from({length:733},(_,i)=>({id:'extra'+i,roles:['rhythm']}));
- const roles=buildRoles([...PRESETS,...extra]);assert.ok(roles.length<=128);
- const seen=new Set();let role=-1;
- for(let value=0;value<128;value++){role=potIndex(value,roles.length,role);seen.add(role);}
- assert.equal(seen.size,roles.length);
- const all=new Set();
- for(const category of roles){
-  assert.ok(category.pages.length<=128);
-  const reachedPages=new Set();let page=-1;
-  for(let value=0;value<128;value++){page=potIndex(value,category.pages.length,page);reachedPages.add(page);}
-  assert.equal(reachedPages.size,category.pages.length);
-  for(const role of category.pages){
-  assert.ok(role.presets.length<=64);
-  for(const direction of [1,-1]){
-   let index=-1;const reached=new Set();
-   for(let n=0;n<128;n++){index=potIndex(direction===1?n:127-n,role.presets.length,index);reached.add(index);all.add(role.presets[index].id);}
-   assert.equal(reached.size,role.presets.length);
-  }
- }
- }
+ const roles=buildRoles([...PRESETS,...extra]);assert.equal(roles.length,6);
+ const all=new Set(roles.flatMap(role=>role.presets.map(p=>p.id)));
  for(const p of [...PRESETS,...extra])assert.ok(all.has(p.id));
+ assert.ok(roles[0].presets.length>733);
 });
 test('grouping follows song function and keeps readable names',()=>{
  assert.deepEqual(musicalRoles('acoustic_bass','soundfont'),['bass']);

@@ -1,5 +1,5 @@
 // Sample-clock transport. Only live instrument input is captured.
-const emptyTrack=()=>({data:null,length:0,audioLength:0,bars:0,pendingBars:0,changeAt:0,position:0,edge:0,hasAudio:false,muted:false,gain:1,mode:'empty'});
+const emptyTrack=()=>({data:null,length:0,audioLength:0,bars:0,pendingBars:0,changeAt:0,position:0,edge:0,hasAudio:false,muted:false,volume:70,gain:1,mode:'empty'});
 export class LoopCore {
  constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=8}={}){
   this.rate=rate;this.capacity=Math.ceil(rate*maxSeconds);this.minimum=Math.ceil(rate*minSeconds);
@@ -73,6 +73,7 @@ export class LoopCore {
   if(c.type==='stop'){this.requestFinish();return;}
   const i=c.track;if(!Number.isInteger(i)||i<0||i>=this.tracks.length)return;
   const t=this.tracks[i];
+  if(c.type==='volume'){if(Number.isFinite(c.value)){t.volume=Math.max(0,Math.min(100,c.value));this.touch();}return;}
   if(c.type==='prepare'){if(!t.data&&c.data instanceof Float32Array&&c.data.length===this.capacity)t.data=c.data;return;}
   if(c.type==='shorten'||c.type==='lengthen'){
    if(!t.hasAudio)return;
@@ -88,7 +89,7 @@ export class LoopCore {
   if(c.type==='clear'){
    if(this.pending===i)this.cancelPending();
    if(this.active===i){this.active=-1;this.captured=0;this.closingAt=0;}
-   this.tracks[i]=emptyTrack();this.recalculate();if(!this.length&&this.pending>=0&&!this.countInRemaining)this.armFirst(this.pending);this.touch();return;
+   this.tracks[i]={...emptyTrack(),volume:t.volume,gain:t.volume/70};this.recalculate();if(!this.length&&this.pending>=0&&!this.countInRemaining)this.armFirst(this.pending);this.touch();return;
   }
   if(c.type!=='record'&&c.type!=='trigger')return;
   if(this.pending===i){this.cancelPending();this.touch();return;}
@@ -117,7 +118,7 @@ export class LoopCore {
    }
    t.audioLength=Math.ceil(this.captured);
    t.bars=this.roundedBars(this.captured);t.length=t.bars*this.barLength;
-   if(first)this.baseLength=this.barLength*8;
+   if(first)this.baseLength=this.barLength*4;
    if(t.length>this.length){this.transport-=this.recordStart;this.lastBeat=Math.floor((this.transport-this.speed+1e-7)/(this.barLength/4));}
    t.position=this.phase(t.length);
    t.edge=Math.ceil(this.rate*.002);
@@ -144,7 +145,7 @@ export class LoopCore {
    const sample=Number.isFinite(input?.[frame])?input[frame]:0;
    const recording=this.active>=0?this.tracks[this.active]:null;
    for(const t of this.renderTracks){
-    const target=t.muted?0:1;
+    const target=t.muted?0:t.volume/70;
     if(t.gain!==target)t.gain+=Math.max(-ramp,Math.min(ramp,target-t.gain));
     const position=this.phase(t.length);
     if(t.gain>0){
@@ -190,6 +191,6 @@ export class LoopCore {
    countInRemaining:this.countInRemaining,countInTotal:this.countInTotal,
    countInBeat:this.countInRemaining?Math.min(this.countInBeats-1,Math.floor((this.countInTotal-this.countInRemaining)*this.bpm/(60*this.rate))):null,
    revision:this.revision,message:this.message,
-   tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,mode:t.mode,length:t.length,audioLength:t.audioLength,bars:t.bars,pendingBars:t.pendingBars,canOverdub:t.length<=this.capacity,multiple:this.baseLength?t.length/this.baseLength:0}))};
+   tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,volume:t.volume,position:t.position,mode:t.mode,length:t.length,audioLength:t.audioLength,bars:t.bars,pendingBars:t.pendingBars,canOverdub:t.length<=this.capacity,multiple:this.baseLength?t.length/this.baseLength:0}))};
  }
 }

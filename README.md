@@ -8,7 +8,7 @@ El catálogo observado durante esta implementación contiene 862 presets/variant
 
 Los metadatos adicionales se consultan al abrir; el catálogo GM y los presets originales siguen disponibles si falla esa consulta. Ajustes → Sonidos y créditos muestra cantidad y fallos por familia, con botón Actualizar catálogo. No se instancia ni descarga audio al enumerar sonidos: solo al seleccionar uno con audio activado. Se serializan las cargas, se aborta la anterior y se libera el sampler anterior; no se acumulan bancos en RAM. No se encolan notas durante la carga.
 
-Instrumentos agrupados por función en la canción. Si un rol supera 64 sonidos se divide en páginas del mismo rol, seleccionables con CC14; CC15 recorre los sonidos de la página, todos alcanzables paso a paso en ambas direcciones. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
+Instrumentos agrupados por función en la canción, con una lista completa por categoría, sin páginas ni límite de 64/128 opciones. CC13 cambia categoría y CC14 recorre sus instrumentos paso a paso. CC15 ajusta el volumen de la pista seleccionada. CC7 sigue siendo master. Se preservan los IDs de los 19 sonidos anteriores. Los nombres incluyen banco/origen para diferenciar variantes. Solo se cargan muestras del instrumento elegido; Internet requerido. Créditos por colección en public/sounds.html. Versilian es experimental según upstream.
 
 Batería: 16 muestras acústicas con velocidad, reproducción completa al soltar y exclusión de hi-hat abierto/cerrado. Mapeo GM MIDI 35–59 (las notas sin pieza quedan mudas), duplicado en 60–83 para teclados pequeños. Do/bombo, Re/redoblante, Fa♯/hi-hat cerrado, La♯/abierto. Sin pitch bend ni sustain en batería. Los controles de pista asignados consumen la nota como antes.
 
@@ -27,7 +27,8 @@ Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voce
 - BPM 40–240: cambiarlo acelera/frena el audio y cambia su tono. La guía también sigue ese BPM. Bloqueado durante toma o espera; no afecta las notas en vivo.
 - Metrónomo Clic: un pulso por beat calculado por muestras. No entra en la grabación. Pausar/Silenciar todo lo apaga.
 - Notas fijas 30–45, canal MIDI 10 (modo PAD): nota 30 controla la pista 1, nota 31 la 2, hasta nota 45/pista 16. Al pulsar un pad no utilizado se agrega únicamente su pista, sin crear las intermedias. Las pistas se muestran en orden de creación con su número fijo; la nota 35 corresponde siempre a la pista 6. El botón Agregar utiliza el primera nota de pad libre. Tienen prioridad sobre asignaciones guardadas y aprendizaje; las antiguas asignaciones de pistas se ignoran. No se agregan pistas al soltar ni con notas fuera del rango. Los CC ya no controlan pistas automáticamente; las notas de otros canales siguen tocando el instrumento. Las notas reservadas no producen sonido de instrumento.
-- Botón MIDI de pista: vacía graba/arma, en espera cancela, grabando cierra, con audio alterna reproducción/silencio. Mantener 1 s borra. Requiere botón momentáneo (Note On con velocity positiva al pulsar; Note Off o Note On con velocity 0 al soltar). El overdub se inicia desde la pantalla.
+- Selección de pista: tocar un pad diferente primero selecciona (y crea solo esa pista si falta), sin iniciar audio, cambiar reproducción ni armar borrado. Se debe soltar antes de la siguiente pulsación. También se selecciona tocando el círculo, agregando una pista o usando sus botones de pantalla. La pista 1 empieza seleccionada.
+- Botón MIDI de pista ya seleccionada: vacía graba/arma, en espera cancela, grabando cierra, con audio alterna reproducción/silencio. Mantener 1 s borra. Requiere botón momentáneo (Note On con velocity positiva al pulsar; Note Off o Note On con velocity 0 al soltar). El overdub se inicia desde la pantalla.
 - Silenciar una pista conserva su fase. Pausar congela el reloj y cierra la toma activa inmediatamente. Esc o perder foco también pausa.
 - Audio en memoria: se pierde al recargar/cerrar. Sin persistencia, exportación, undo de overdub ni estiramiento de tiempo. La duración del ciclo sí admite edición reversible.
 
@@ -57,19 +58,24 @@ Mide las últimas 128 entregas MIDI y preparaciones de notas (mediana/p95/máxim
 Notas MIDI positivas usan la curva 36 + 91 × ((v−1)/126)^0,65, aplicada una sola vez por motor. Levanta los toques suaves sin aumentar el máximo 127; velocity 0 sigue siendo Note Off. También cambia la selección de capas de samples en instrumentos que las tienen. Afecta notas nuevas y su captura, no modifica loops ya grabados. No agrega buffers ni espera. El clic de diagnóstico conserva su intensidad fija.
 
 ## Pots y volumen del MiniControl
-Canal MIDI 1, modo CC absoluto: CC13 elige la categoría, CC14 su página y CC15 el instrumento dentro
-de la página y CC7 controla el volumen master (instrumento, loops y clic).
+Canal MIDI 1, modo CC absoluto: CC13 elige la categoría y CC14 el instrumento dentro
+de la categoría. CC15 ajusta el volumen de la pista seleccionada y CC7 controla el volumen master (instrumento, loops y clic).
 Los roles mezclan todos los sonidos disponibles: base rítmica, bajos,
 acompañamiento, fondos, melodías y acentos/texturas. Un sonido puede figurar
 en varios roles sin duplicar sus muestras. Los bancos se distinguen en el nombre, no definen los roles.
 
-Cada categoría recuerda su página y cada página su último instrumento. Las seis categorías conservan su orden; las páginas se numeran consecutivamente dentro de cada categoría. El selector visual responde al pot
+Cada categoría recuerda su último instrumento. Las seis categorías conservan su orden y el catálogo de cada una es una única lista. Se restauran selecciones antiguas de las páginas. El selector visual responde al pot
 inmediatamente; la carga se solicita tras 250 ms sin cambiar la selección.
 La app interpreta los CC absolutos como navegación relativa: cada subida avanza una opción y cada bajada retrocede una. El primer mensaje de cada perilla/dispositivo establece la referencia. Repetir 0 sigue retrocediendo y repetir 127 sigue avanzando; otros valores repetidos se ignoran. Cada lista se detiene en sus extremos. Las referencias se reinician al actualizar o reconectar dispositivos. CC7 conserva el volumen absoluto.
 Solo se carga el instrumento elegido, conservando los loops.
 Los controles fijos tienen prioridad sobre el aprendizaje y las asignaciones
 antiguas; las asignaciones antiguas de volumen se ignoran. El slider de pantalla
 y CC7 siguen sincronizados. Los controles anterior/siguiente aprendidos recorren
-la página actual. Perder foco, desconectar o silenciar cancela un cambio pendiente.
+la categoría actual. Perder foco, desconectar o silenciar cancela un cambio pendiente.
 
 Las cajas DrumMachine/DrumAbuse mapean los grupos publicados a notas MIDI, conservando bombo 36/60, snare 38/62 y hi-hat cuando esos grupos existen. El resto se distribuye entre 36–59 y 84–127; 60–83 refleja 36–59. Tabla usa 60–88. Los pads reservados 30–45 siguen controlando pistas en canal 10.
+
+## Mezcla por pista e interfaz compacta
+CC15 es relativo igual que las otras perillas: un punto porcentual por mensaje de movimiento, entre 0 y 100. Cada pista comienza en 70%, que equivale a la ganancia anterior de 1; 100% equivale a 100/70 (aprox. +3,1 dB). El slider visible controla la pista seleccionada, y cada tarjeta muestra su nivel. CC7 sigue siendo master.
+El volumen solo afecta la reproducción de esa pista, con una rampa corta para evitar saltos; no modifica muestras ni captura ni metrónomo. Borrar audio conserva el volumen; Nueva sesión lo restaura a 70%.
+Tarjetas móviles compactas con círculo seleccionable. El aro deriva del reloj de audio por pista, incluso silenciada; en la primera toma muestra la guía de 4 compases y en la cuenta previa muestra su avance. Pausar congela el avance. Los controles de acortar/alargar están en el menú ⋯. No se agregan temporizadores ni procesamiento gráfico al hilo de audio.

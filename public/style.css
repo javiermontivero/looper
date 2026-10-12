@@ -16,3 +16,38 @@
 .track-duration{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:8px}.track-duration button{min-width:44px;min-height:44px;padding:4px;font-size:24px;background:transparent}.track-duration .track-length{min-width:115px;text-align:center;font-variant-numeric:tabular-nums}
 
 .sound-navigation{display:flex;gap:6px;min-width:0}#sound-page{flex:0 0 64px;font-size:12px;min-height:36px;padding:6px;color:var(--muted)}
+
+/* Compact mobile track cards: each ring follows the audio transport. */
+header{margin-bottom:10px}
+#loop-time{display:block;font-size:11px;color:var(--muted);margin-bottom:8px}
+.tempo-control{margin:0 0 10px}
+.track-level{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.track-level label{font-size:12px;white-space:nowrap;min-width:96px}
+.track-level input{flex:1;min-width:0;margin:0}
+.tracks{gap:8px}
+.track{display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;contain:layout style}
+.track.selected{border-color:var(--green);box-shadow:inset 3px 0 var(--green)}
+.loop-ring{position:relative;flex:0 0 68px;width:68px;height:68px;min-height:68px;border:0;padding:0;border-radius:50%;background:transparent;color:var(--green)}
+.loop-ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
+.loop-ring circle{fill:none;stroke-width:4}
+.ring-base{stroke:var(--line)}
+.ring-progress{stroke:currentColor;stroke-dasharray:1;stroke-dashoffset:1;stroke-linecap:round}
+.loop-ring .number{font-size:23px;padding:0}
+.track.recording .loop-ring{color:#ff957d}
+.track.muted .loop-ring{color:var(--muted)}
+.track-body{flex:1;min-width:0}
+.track-top{display:flex;align-items:center;gap:6px;min-height:22px;margin-bottom:4px}
+.track-top .track-state{flex:0 0 auto;font-size:10px}
+.track-top .track-length{flex:1;min-width:0;font-size:11px}
+.track-volume{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.track-actions{display:flex;align-items:center;gap:6px}
+.track-actions .record{flex:1;min-width:0;min-height:44px;padding:8px;font-size:12px}
+.track-actions .icon{width:44px;min-height:44px}
+.track details{margin-left:auto}
+.track summary{min-width:36px;min-height:44px}
+.track-menu{top:46px}
+.track-duration{margin:0;gap:8px;justify-content:space-between}
+.track-duration button{flex:1;min-width:44px}
+#add-track{width:100%;margin-top:10px;min-height:44px;font-size:12px;background:transparent;color:var(--muted)}
+@media(min-width:720px){.track{padding:10px 14px}.loop-ring{flex-basis:72px;width:72px;height:72px}.track-actions .record{flex:0 1 130px}.track-actions details{margin-left:0}}
+@media(max-width:359px){.track{gap:8px;padding:8px}.loop-ring{flex-basis:58px;width:58px;height:58px;min-height:58px}.track-actions{gap:4px}.track-level{gap:6px;padding:6px 8px}}
