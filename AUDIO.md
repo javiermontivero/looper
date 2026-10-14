@@ -56,26 +56,12 @@ No UI/session migration is needed.
 
 ## Validation
 
-`node --test` runs offline routing/lifecycle, MIDI, instrument, persistence and
-sample-clock regression tests. Tone doubles exercise ownership and connections;
-they are not DSP simulations.
+Product E2E regressions now run through the published app: `npm test`.
+See [TESTING.md](TESTING.md) for setup, the old-to-new coverage map and limits.
+The previous Node doubles and frozen reference graph have been retired.
+The suite uses the real pinned libraries, native audio/worklets and storage,
+observing final audio and UI rather than graph internals.
 
-`tests/browser/audio-check.html` uses the real pinned Tone bundle and native
-OfflineAudioContext. Serve the repository root with a static HTTP server (for
-example `python3 -m http.server 8000`) and open
-`http://localhost:8000/tests/browser/audio-check.html`. Click Ejecutar.
-It does not touch sessions, MIDI or microphone and produces no audible playback.
-
-The fixture compares both stereo channels against the frozen pre-refactor
-effect graph at 44.1 and 48 kHz, including live parameter edits and an eight-effect
-chain reordered mid-render. It also checks independent source routing and FM.
-The reference in tests/browser is test-only, not a second production engine.
-These fixtures are outside public/ and are not included in Pages.
-
-Real USB MIDI, recording and audible latency on Android still require device
-testing over trusted HTTPS. Offline equivalence is not a mobile performance
-benchmark. Tone does not remove the output buffering reported by Android.
-
-Validation in Lab: 74 Node tests passed; 22 real-browser offline checks passed.
-Tested effects and edits matched the reference sample-for-sample at both rates.
-This covers those signals/configurations, not every possible input or device.
+Real USB MIDI and audible latency on Android still require trusted HTTPS device
+testing. Headless desktop audio is not a mobile performance benchmark.
+Tone does not remove the output buffering reported by Android.

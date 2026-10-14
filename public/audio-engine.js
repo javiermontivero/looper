@@ -24,7 +24,7 @@ export class AudioEngine{
   const {Tone,context}=audio;
   this.bus=new Tone.Gain({context,gain:1});
   this.capture=this.bus.output;
-  this.safety=new Tone.WaveShaper({context,curve:safetyCurve(),oversample:'none'});
+  this.safety=new Tone.WaveShaper({context,mapping:safetyCurve()});
   this.master=new Tone.Gain({context,gain:.65});
   this.safety.connect(this.master);this.master.connect(this.context.destination);
   this.mixer=new Mixer(audio,this.capture,this.safety);

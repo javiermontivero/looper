@@ -38,8 +38,8 @@ Si el entorno `github-pages` tiene restricciones de ramas/tags, autorizar la
 rama utilizada para ejecuciones manuales y los tags de versiones (por ejemplo
 `v*`). No eliminar otras protecciones del repositorio.
 
-Antes de cada despliegue se ejecutan `node --test` con Node 22 y
-`python3 tests/validate_static.py`. Si falla una comprobación, el job de
+Antes de cada despliegue se ejecuta `npm test` con Node 22 y Chromium de
+Playwright. Ver [TESTING.md](TESTING.md). Si falla una comprobación, el job de
 despliegue no se ejecuta y la publicación anterior permanece disponible.
 
 ## Comprobación desde el teléfono
@@ -47,8 +47,8 @@ despliegue no se ejecuta y la publicación anterior permanece disponible.
 Abrir el sitio por HTTPS, activar audio, conceder permiso MIDI, cargar un preset
 y probar una nota. Grabar y cerrar una pista para comprobar AudioWorklet,
 probar el metrónomo y el control MIDI asignado. Los permisos y las preferencias
-del sitio del Lab no se transfieren al nuevo dominio. Los loops siguen siendo
-temporales y se pierden al cerrar o recargar.
+del sitio del Lab no se transfieren al nuevo dominio. La sesión se guarda localmente por origen; esperar «Guardado local» antes de
+recargar. El almacenamiento de Lab y Pages es independiente.
 
 Pages no ejecuta `server.mjs`: no ofrece su endpoint `/health` ni sus cabeceras
 HTTP personalizadas. Este despliegue no agrega funcionamiento sin conexión.

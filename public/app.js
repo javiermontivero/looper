@@ -233,7 +233,7 @@ function moveEffect(delta){
  const c=currentChain();[c[target],c[selectedEffect]]=[c[selectedEffect],c[target]];selectedEffect=target;applyEffects();
 }
 function getConfig(){return {notes:[...trackNotes],selected:selectedTrack<0?-1:trackNotes[selectedTrack]-31,chains,bpm,volume,preset:preset.id,role:soundBrowser.role.id};}
-function scheduleConfig(){if(!sessionLoaded||!sessionWritable)return;session.configScheduled=true;clearTimeout(configTimer);configTimer=setTimeout(()=>{session.configScheduled=false;session.config(getConfig());},300);}
+function scheduleConfig(){if(!sessionLoaded||!sessionWritable)return;session.configScheduled=true;session.onStatus('Guardando…');clearTimeout(configTimer);configTimer=setTimeout(()=>{session.configScheduled=false;session.config(getConfig());},300);}
 function scheduleSnapshot(){
  if(!sessionLoaded||!sessionWritable||!looper||pendingSnapshot)return;
  clearTimeout(snapshotTimer);snapshotTimer=setTimeout(()=>{if(looper.state?.active>=0||looper.state?.pending>=0)return;looper.snapshot(++snapshotSerial);},400);

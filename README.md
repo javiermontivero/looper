@@ -38,15 +38,17 @@ AudioWorklet procesa captura y reproducción en un único reloj de muestras. Cap
 JavaScript ES modules, Tone.js 15.1.22 para mezcla/efectos y Web Audio; smplr 1.1.0 se importa dinámicamente desde CDN para los instrumentos muestreados. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
 
 ## Pruebas antes de publicar
-`node --test`: incluye regresiones de MIDI, síntesis, servidor y reloj de muestras del looper.
-`python3 tests/validate_static.py`: comprobaciones offline de módulos publicados y controles.
-
-La construcción ejecuta las pruebas Node antes de desplegar, incluyendo carga y cambio de instrumentos, sustain, límites de voces y recuperación de errores. El sandbox de workspace sigue sin Node; la imagen Docker sí lo incluye. Las pruebas automáticas no reemplazan la prueba real de AudioWorklet/MIDI en Android + Chrome por HTTPS.
+Una sola suite de producto: `npm test`, con Playwright/Chromium, MIDI virtual y
+Web Audio, Tone, smplr, AudioWorklet e IndexedDB reales. Incluye regresión prolongada
+de 1000 vueltas. Preparación, comandos rápidos, reportes, cobertura y límites:
+[TESTING.md](TESTING.md). Lab ejecuta la suite como servicio regression y conserva sus reportes; Pages
+espera que apruebe antes de publicar.
 
 ## Despliegue
 GitHub Pages para las versiones publicadas: ver [PAGES.md](PAGES.md). El workflow publica tras una Release estable o una ejecución manual, siempre después de pasar las pruebas.
 
-Lab project_up construye Node 22 Alpine, ejecuta la suite y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
+Lab project_up verifica el arranque en Playwright, construye el runtime Node 22 Alpine
+y lanza la regresión completa como servicio separado y arranca Compose en 127.0.0.1:18865, publicado en /looper/. Cambios guardados en Git; producción utiliza la imagen construida, no un bind mount. Endpoint /health. HTTPS: ver HTTPS.md.
 
 ## Diagnóstico de latencia
 AudioContext solicita interactive. Las notas se disparan inmediatamente con nodos nativos de Web Audio: DSP/reproducción en el hilo de audio, eventos MIDI y creación de voces en el principal. No hay espera entre notas ni descarga por pulsación. El looper usa AudioWorklet.
@@ -88,7 +90,7 @@ Esperar Guardado local antes de recargar. No se depende de beforeunload para esc
 Tarjetas compactas con círculo basado en el reloj compartido, guía de cuatro compases y dos compases de cuenta previa. Acortar/alargar en ⋯.
 
 ## Validación de esta versión
-Pruebas de ruteo independiente, límite de siete pistas, edición MIDI/contextual y reordenamiento, modelos de efectos/disposal, snapshots por bloques y cancelación, transacciones/quota con conservación de datos, restauración con cambio de frecuencia y conservación de audio oculto. Verificación en navegador del guardado real de parámetros y orden tras recarga. La escucha y recuperación de audio con teclado físico se validan en Android/Chrome por HTTPS.
+Pruebas de ruteo independiente, límite de siete pistas, edición MIDI/contextual y reordenamiento, audio de efectos reales y recuperación frente a cambios durante el guardado, transacciones/quota con conservación de datos, restauración con cambio de frecuencia y conservación de audio oculto. Verificación en navegador del guardado real de parámetros y orden tras recarga. La escucha y recuperación de audio con teclado físico se validan en Android/Chrome por HTTPS.
 
 ## Refactor Tone.js
 Arquitectura, contrato de fuentes, límites y pruebas de equivalencia de audio: [AUDIO.md](AUDIO.md). Tone se descarga al activar audio; si falla, se puede reintentar. smplr, el sintetizador FM y el reloj del AudioWorklet conservan su comportamiento. No se añadió captura de micrófono ni cambió el formato de las sesiones.
