@@ -18,7 +18,7 @@ https://javiermontivero.github.io/looper/
 3. En Settings → Pages → Build and deployment → Source, elegir **GitHub Actions**.
 4. En Actions → **Publish GitHub Pages** → Run workflow, seleccionar la rama con
    la versión aprobada y ejecutar.
-5. Esperar a que `validate` y `deploy` terminen correctamente. La URL publicada
+5. Esperar a que `deploy` termine correctamente. La URL publicada
    aparece en el entorno `github-pages` y en Settings → Pages.
 
 Si el repositorio es privado, Pages requiere un plan de GitHub que lo admita.
@@ -38,9 +38,10 @@ Si el entorno `github-pages` tiene restricciones de ramas/tags, autorizar la
 rama utilizada para ejecuciones manuales y los tags de versiones (por ejemplo
 `v*`). No eliminar otras protecciones del repositorio.
 
-Antes de cada despliegue se ejecuta `npm test` con Node 22 y Chromium de
-Playwright. Ver [TESTING.md](TESTING.md). Si falla una comprobación, el job de
-despliegue no se ejecuta y la publicación anterior permanece disponible.
+El workflow solo publica `public/`: no instala Node ni Playwright, no ejecuta
+pruebas y no crea un job de regresión. Las pruebas de producto se corren bajo
+demanda durante el desarrollo, antes de elegir la versión a publicar:
+[TESTING.md](TESTING.md). El deploy no comprueba ni exige una corrida previa.
 
 ## Comprobación desde el teléfono
 

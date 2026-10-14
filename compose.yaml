@@ -8,16 +8,3 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-  regression:
-    build:
-      context: .
-      target: regression
-    restart: "no"
-    init: true
-    network_mode: none
-    environment:
-      TEST_RESULTS_DIR: /reports/test-results
-      PLAYWRIGHT_HTML_OUTPUT_DIR: /reports/html
-      PLAYWRIGHT_JSON_OUTPUT_NAME: /reports/results.json
-    volumes:
-      - "${LAB_STORAGE}/regressions:/reports"

@@ -10,16 +10,20 @@ npx playwright install --with-deps chromium
 npm test
 ```
 
-También: `docker build --target regression -t looper-regression .` y
-`docker run --rm --network none looper-regression`.
-En Lab, project_up hace primero una prueba breve de arranque/publicación y luego
-lanza la suite completa en el servicio regression, junto a la app. Es asíncrono
-porque las llamadas MCP esperan como máximo cinco minutos. Comprobar project_logs: debe terminar con todos los casos aprobados y sin
-fallos. project_status muestra regression mientras corre; al terminar deja de
-figurar entre los servicios activos. No interpretar su ausencia como aprobación:
-el resultado se confirma en el log y en el reporte JSON. Los reportes se conservan en `${LAB_STORAGE}/regressions`. Un Lab iniciado
-no significa que la regresión completa haya aprobado. Pages sí espera el resultado
-completo de npm test antes de publicar.
+Las pruebas se ejecutan bajo demanda desde el checkout de desarrollo, normalmente
+al terminar una feature o un arreglo. No corren por push, pull request, release,
+publicación de Pages, build ni arranque de Lab. No hay workflow de regresión,
+servicio de tests, imagen de Playwright ni VM dedicada.
+
+Playwright abre Chromium y el servidor local de prueba durante la corrida y los
+cierra al terminar. Son procesos de la ejecución local, no servicios permanentes.
+
+Para trabajar con el agente en Lab, Node, las dependencias y Chromium deben estar
+disponibles en el sandbox de comandos. Si faltan, el administrador debe preparar
+ese entorno; no se reemplaza por una VM, contenedor de tests o job de Actions.
+La instalación de requisitos se hace una vez en el entorno de desarrollo con
+acceso a red; las corridas usan los recursos locales.
+
 No hace falta conectar un teclado ni tener salida de audio en el servidor.
 
 La suite ejecuta escenarios de audio en serie para evitar competencia de foco,
@@ -88,12 +92,10 @@ comprueban de extremo a extremo.
 ## Resultados y límites
 
 Playwright escribe `playwright-report/` y `test-results/`, incluido un resumen JSON.
-En fallos conserva captura y traza; GitHub Actions los adjunta aunque falle la corrida.
-Lab conserva HTML, JSON y trazas en el volumen de regresiones, y emite los resultados
-y el estado visible de los casos fallidos en project_logs. La etapa breve del build
-solo verifica arranque y publicación; su aprobación no sustituye el resultado del
-servicio regression. La corrida larga desactiva las capturas continuas de la traza
-para no guardar miles de imágenes del círculo; conserva la captura al fallar.
+En fallos conserva captura y traza. Los reportes quedan en el entorno donde se
+ejecutó la suite y se consultan con `npm run test:report`.
+La corrida larga desactiva las capturas continuas de la traza para no guardar
+miles de imágenes del círculo; conserva la captura al fallar.
 
 El proyecto soak depende de las otras regresiones: las 1000 vueltas solo se
 inician si las demás pasan. La corrida prolongada usa BPM de referencia 137 y

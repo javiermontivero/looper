@@ -68,7 +68,7 @@ Open **http://localhost:8080/**. Phone access needs [HTTPS](HTTPS.md).
 
 - **smplr** — sampled instruments.
 - **Tone.js** — mixing and effects.
-- **Playwright** — browser regression tests.
+- **Playwright** — product E2E tests, run locally on demand with `npm test`.
 - **Node.js** — local static-file server; the published app runs entirely in your browser.
 
 [Sound credits](public/sounds.html) · [Tests](TESTING.md) · [Deploy to Pages](PAGES.md) · [Audio architecture](AUDIO.md)
