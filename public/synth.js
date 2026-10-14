@@ -1,4 +1,3 @@
-import {safetyCurve} from './latency.js';
 export const PRESETS=[
 {id:'velvet',name:'Velvet EP',category:'Teclas',description:'Piano eléctrico suave, con brillo al tocar más fuerte.',ratio:1,index:2.3,attack:.008,decay:1.4,sustain:.14,release:.65,tone:5200},
 {id:'glass',name:'Glass Keys',category:'Teclas',description:'Campanas claras y una caída larga y brillante.',ratio:3.5,index:2.8,attack:.003,decay:2.1,sustain:.05,release:1.3,tone:8500},
@@ -21,15 +20,18 @@ export function playableVelocity(value){
 }
 export const frequency=note=>440*2**((note-69)/12);
 export class Synth {
- constructor(context){this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();this.preset=PRESETS[0];this.maxVoices=32;this.input=context.createGain();this.master=context.createGain();this.master.gain.value=.65;this.compressor=context.createWaveShaper();this.compressor.curve=safetyCurve();this.compressor.oversample='none';this.input.connect(this.compressor);this.compressor.connect(this.master);this.master.connect(context.destination);}
- // Direct diagnostic click goes to monitor only, never into recorded audio.
- testClick(){
-  const c=this.context,t=c.currentTime,osc=c.createOscillator(),amp=c.createGain();
-  osc.frequency.value=1000;amp.gain.setValueAtTime(.08,t);amp.gain.exponentialRampToValueAtTime(.0001,t+.035);
-  osc.connect(amp);amp.connect(this.master);osc.onended=()=>{osc.disconnect();amp.disconnect();};
-  osc.start(t);osc.stop(t+.04);
+ constructor(context,destination){
+  this.context=context;this.voices=new Map();this.sustain=new Set();this.bends=new Map();
+  this.preset=PRESETS[0];this.maxVoices=32;this.tails=new Set();this.output=context.createGain();
+  if(destination)this.output.connect(destination);
  }
- volume(value){this.master.gain.setTargetAtTime(Math.max(0,Math.min(1,value)),this.context.currentTime,.015);}
+ dispose(){
+  for(const v of new Set([...this.voices.values(),...this.tails])){
+   v.carrier.onended=null;v.carrier.stop();v.mod.stop();
+   for(const n of [v.carrier,v.mod,v.depth,v.amp,v.filter])n.disconnect();
+  }
+  this.voices.clear();this.tails.clear();this.sustain.clear();this.bends.clear();this.output.disconnect();
+ }
  noteOn(key,note,velocity=100,channel='local'){
   velocity=playableVelocity(velocity);if(!velocity){this.noteOff(key);return;}
   this.stop(key,true);if(this.voices.size>=this.maxVoices)this.stop(this.voices.keys().next().value,true);
@@ -40,13 +42,13 @@ export class Synth {
   depth.gain.setValueAtTime(hz*p.index*(.35+.65*v),t);depth.gain.exponentialRampToValueAtTime(Math.max(.1,hz*p.index*.14),t+p.attack+p.decay);
   filter.type='lowpass';filter.frequency.value=Math.min(c.sampleRate*.45,p.tone*(.5+.5*v));filter.Q.value=.5;
   const peak=.18*v; amp.gain.setValueAtTime(0,t);amp.gain.linearRampToValueAtTime(peak,t+p.attack);amp.gain.exponentialRampToValueAtTime(Math.max(.0001,peak*p.sustain),t+p.attack+p.decay);
-  mod.connect(depth);depth.connect(carrier.frequency);carrier.connect(filter);filter.connect(amp);amp.connect(this.input);mod.start(t);carrier.start(t);
+  mod.connect(depth);depth.connect(carrier.frequency);carrier.connect(filter);filter.connect(amp);amp.connect(this.output);mod.start(t);carrier.start(t);
   const voice={carrier,mod,depth,amp,filter,channel,note,release:p.release,held:true,released:false};
-  carrier.onended=()=>{for(const n of [carrier,mod,depth,amp,filter])n.disconnect();if(this.voices.get(key)===voice)this.voices.delete(key);};
+  carrier.onended=()=>{this.tails.delete(voice);for(const n of [carrier,mod,depth,amp,filter])n.disconnect();if(this.voices.get(key)===voice)this.voices.delete(key);};
   this.voices.set(key,voice);
  }
  noteOff(key){const v=this.voices.get(key);if(!v)return;v.held=false;if(!this.sustain.has(v.channel))this.stop(key);}
- stop(key,immediate=false){const v=this.voices.get(key);if(!v||(!immediate&&v.released))return;v.released=true;const t=this.context.currentTime,r=immediate?.008:v.release;if(typeof v.amp.gain.cancelAndHoldAtTime==='function')v.amp.gain.cancelAndHoldAtTime(t);else{const level=v.amp.gain.value;v.amp.gain.cancelScheduledValues(t);v.amp.gain.setValueAtTime(level,t);}v.amp.gain.linearRampToValueAtTime(0,t+r);v.carrier.stop(t+r+.01);v.mod.stop(t+r+.01);if(immediate)this.voices.delete(key);}
+ stop(key,immediate=false){const v=this.voices.get(key);if(!v||(!immediate&&v.released))return;v.released=true;const t=this.context.currentTime,r=immediate?.008:v.release;if(typeof v.amp.gain.cancelAndHoldAtTime==='function')v.amp.gain.cancelAndHoldAtTime(t);else{const level=v.amp.gain.value;v.amp.gain.cancelScheduledValues(t);v.amp.gain.setValueAtTime(level,t);}v.amp.gain.linearRampToValueAtTime(0,t+r);v.carrier.stop(t+r+.01);v.mod.stop(t+r+.01);if(immediate){this.tails.add(v);this.voices.delete(key);}}
  pedal(channel,down){if(down)this.sustain.add(channel);else{this.sustain.delete(channel);for(const [key,v] of this.voices)if(v.channel===channel&&!v.held)this.stop(key);}}
  bend(channel,value){const cents=(value-8192)/8192*200;this.bends.set(channel,cents);for(const v of this.voices.values())if(v.channel===channel){v.carrier.detune.setTargetAtTime(cents,this.context.currentTime,.008);v.mod.detune.setTargetAtTime(cents,this.context.currentTime,.008);}}
  channelOff(channel){this.sustain.delete(channel);for(const [key,v] of this.voices)if(v.channel===channel)this.stop(key,true);}

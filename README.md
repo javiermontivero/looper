@@ -33,9 +33,9 @@ Además, 12 presets FM originales de dos operadores (no emulación DX7), 32 voce
 - Persistencia automática local en IndexedDB, al cerrar cada toma y modificar la sesión. Esperar «Guardado local» antes de recargar. Toma/overdub en curso aún no respaldados. Sin exportación, undo de overdub ni estiramiento de tiempo. La duración del ciclo y los efectos admiten edición reversible.
 
 ## Motor
-AudioWorklet procesa captura y reproducción en un único reloj de muestras. Captura solo el bus del sintetizador, antes del control de picos/volumen; el audio de los loops nunca realimenta la grabación. El sintetizador sigue conectado al monitor en vivo. Unos 11,5 MB por pista utilizada a 48 kHz / 60 s, asignados al prepararla y liberados al borrarla; agregar una pista vacía no reserva audio. No se mezclan pistas vacías, y las completamente silenciadas omiten interpolación de audio conservando su reloj. No se ha medido una mejora de latencia en el teléfono. Saturación del acumulador acotada y curva de protección de picos sin look-ahead a la salida; las entradas/salidas del loop tienen microfundidos para evitar clics.
+AudioWorklet procesa captura y reproducción en un único reloj de muestras. Captura solo el bus seco de la fuente de audio, antes del control de picos/volumen; el audio de los loops nunca realimenta la grabación. El sintetizador sigue conectado al monitor en vivo. Unos 11,5 MB por pista utilizada a 48 kHz / 60 s, asignados al prepararla y liberados al borrarla; agregar una pista vacía no reserva audio. No se mezclan pistas vacías, y las completamente silenciadas omiten interpolación de audio conservando su reloj. No se ha medido una mejora de latencia en el teléfono. Saturación del acumulador acotada y curva de protección de picos sin look-ahead a la salida; las entradas/salidas del loop tienen microfundidos para evitar clics.
 
-JavaScript ES modules y Web Audio; smplr 1.1.0 se importa dinámicamente desde CDN para los instrumentos muestreados. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
+JavaScript ES modules, Tone.js 15.1.22 para mezcla/efectos y Web Audio; smplr 1.1.0 se importa dinámicamente desde CDN para los instrumentos muestreados. Node sirve archivos; síntesis y grabación suceden en el celular/PC. HTTPS confiable requerido para AudioWorklet y MIDI. No se usa micrófono.
 
 ## Pruebas antes de publicar
 `node --test`: incluye regresiones de MIDI, síntesis, servidor y reloj de muestras del looper.
@@ -78,7 +78,7 @@ Las cajas DrumMachine/DrumAbuse mapean los grupos publicados a notas MIDI, conse
 ## Cadenas y persistencia local
 Master (pad 1) y siete pistas (pads 2–8). Cada uno dispone de ocho espacios de efectos vacíos por defecto. Pads 9–16 seleccionan el espacio; CC15 elige tipo, CC13/14 ajustan parámetros de a un punto. Seleccionar una pista vuelve al modo instrumentos. La UI permite reordenar con Antes/Después; elegir Vacío elimina ese efecto.
 
-Efectos implementados con nodos Web Audio nativos compatibles con el AudioContext de smplr: volumen/pan, paso bajo, paso alto, EQ graves/agudos, delay, reverb, tremolo y distorsión. Volumen es opcional, 70% equivale a ganancia 1 y 100% a 100/70. CC7 conserva el control de salida general.
+Efectos implementados con componentes Tone.js sobre el mismo AudioContext de smplr, conservando los algoritmos y parámetros originales: volumen/pan, paso bajo, paso alto, EQ graves/agudos, delay, reverb, tremolo y distorsión. Volumen es opcional, 70% equivale a ganancia 1 y 100% a 100/70. CC7 conserva el control de salida general.
 Cada pista del worklet tiene salida propia, después su cadena, después master y finalmente protección de picos/volumen de salida. El monitor en vivo pasa por la cadena de la pista seleccionada; con master seleccionado va directo a la cadena master. La captura es seca: nunca incluye retornos de pistas ni efectos. Reordenar/cambiar efectos no altera el audio grabado; elimina las colas internas de los efectos reemplazados.
 Instancias vacías sin DSP de efectos; parámetros reutilizan nodos y se suavizan donde corresponde. Los cambios de cadena se aplican tras 100 ms para reducir reconstrucciones al girar. Muchas reverbs simultáneas pueden exigir más CPU en móviles.
 
@@ -89,3 +89,6 @@ Tarjetas compactas con círculo basado en el reloj compartido, guía de cuatro c
 
 ## Validación de esta versión
 Pruebas de ruteo independiente, límite de siete pistas, edición MIDI/contextual y reordenamiento, modelos de efectos/disposal, snapshots por bloques y cancelación, transacciones/quota con conservación de datos, restauración con cambio de frecuencia y conservación de audio oculto. Verificación en navegador del guardado real de parámetros y orden tras recarga. La escucha y recuperación de audio con teclado físico se validan en Android/Chrome por HTTPS.
+
+## Refactor Tone.js
+Arquitectura, contrato de fuentes, límites y pruebas de equivalencia de audio: [AUDIO.md](AUDIO.md). Tone se descarga al activar audio; si falla, se puede reintentar. smplr, el sintetizador FM y el reloj del AudioWorklet conservan su comportamiento. No se añadió captura de micrófono ni cambió el formato de las sesiones.

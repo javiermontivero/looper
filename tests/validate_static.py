@@ -40,8 +40,8 @@ app = (PUBLIC / "app.js").read_text()
 for element_id in re.findall(r"\$\(['\"]#([a-zA-Z0-9_-]+)['\"]\)", app):
     assert element_id in page.ids, "Missing UI element: " + element_id
 synth = (PUBLIC / "synth.js").read_text()
-assert "amp.connect(this.input)" in synth
-assert "this.input.connect(this.compressor)" in synth
+assert "amp.connect(this.output)" in synth
+assert "this.capture=this.bus.output" in (PUBLIC / "audio-engine.js").read_text()
 assert "source.connect(this.node);this.node.connect(destination.master.input,0)" in (PUBLIC / "looper.js").read_text()
 assert json.loads((ROOT / "package.json").read_text())["version"] == "0.2.0"
 assert "version:'0.2.0'" in server

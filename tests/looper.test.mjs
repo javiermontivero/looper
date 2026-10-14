@@ -210,29 +210,7 @@ test('audible impulses from short and long tracks coincide every shared cycle',(
  }
 });
 
-test('track volume is reversible playback gain, smoothed and isolated from capture',()=>{
- const c=core();record(c,0,Array(2000).fill(.2));prepare(c,1);
- const original=c.tracks[0].data.slice();
- assert.equal(c.tracks[0].volume,70);
- c.command({type:'volume',track:0,value:100});advance(c,100);
- assert.ok(Math.abs(c.tracks[0].gain-100/70)<1e-10);
- const louder=run(c,Array(20).fill(0));assert.ok(louder.every(v=>Math.abs(v-.2*100/70)<1e-6));
- c.command({type:'volume',track:0,value:0});
- const fade=run(c,Array(1).fill(0));assert.ok(fade[0]>0,'gain ramps instead of jumping');
- advance(c,100);assert.ok(run(c,Array(20).fill(0)).every(v=>v===0));
- assert.deepEqual(c.tracks[0].data,original);
- assert.equal(c.tracks[1].volume,70);
- c.command({type:'volume',track:0,value:35});advance(c,100);
- assert.ok(run(c,Array(20).fill(0)).every(v=>Math.abs(v-.1)<1e-6));
- c.command({type:'mute',track:0});advance(c,100);assert.equal(c.tracks[0].gain,0);
- c.command({type:'mute',track:0});advance(c,100);assert.equal(c.tracks[0].gain,.5);
- c.command({type:'volume',track:0,value:NaN});assert.equal(c.tracks[0].volume,35);
- c.command({type:'volume',track:0,value:200});assert.equal(c.tracks[0].volume,100);
- c.command({type:'volume',track:0,value:-1});assert.equal(c.tracks[0].volume,0);
- c.command({type:'clear',track:0});assert.equal(c.tracks[0].volume,0);
- record(c,0,Array(100).fill(.3));assert.ok(Math.abs(c.tracks[0].data[50]-.3)<1e-6,'zero playback volume does not erase input');
- c.command({type:'reset'});assert.equal(c.tracks[0].volume,70);
-});
+
 test('four-bar guide survives closing the first take and per-track phase follows shared transport',()=>{
  const c=core();assert.equal(c.state().baseSeconds,8);
  record(c,0,Array(100).fill(.2));assert.equal(c.state().baseSeconds,8);
@@ -246,4 +224,16 @@ test('independent track outputs remain phase aligned and master output only carr
  assert.ok(output.every(v=>v===0));assert.ok(tracks[0].every(v=>Math.abs(v-.2)<1e-6));assert.ok(tracks[1].every(v=>Math.abs(v-.4)<1e-6));assert.ok(tracks[2].every(v=>v===0));
  c.command({type:'mute',track:0});advance(c,100);c.process(new Float32Array(128),output,tracks);
  assert.ok(tracks[0].every(v=>v===0));assert.ok(tracks[1].every(v=>Math.abs(v-.4)<1e-6));
+});
+
+test('mute ramps playback only; capture remains at unity without legacy track volume',()=>{
+ const c=core();record(c,0,Array(2000).fill(.3));
+ const original=c.tracks[0].data.slice(0,2000);
+ c.command({type:'mute',track:0});advance(c,100);
+ assert.equal(c.tracks[0].gain,0);
+ assert.deepEqual(c.tracks[0].data.slice(0,2000),original);
+ c.command({type:'mute',track:0});advance(c,100);
+ assert.equal(c.tracks[0].gain,1);
+ c.command({type:'clear',track:0});
+ assert.equal(c.tracks[0].gain,1);assert.equal(c.tracks[0].muted,false);
 });

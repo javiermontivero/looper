@@ -1,7 +1,7 @@
 import {playableVelocity} from '../public/synth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Synth,PRESETS,SAMPLES,drumForNote} from '../public/instruments.js';
+import {InstrumentSource,PRESETS,SAMPLES,drumForNote} from '../public/instruments.js';
 class Param{setTargetAtTime(){} }
 class Node{constructor(){this.gain=new Param();this.threshold={};this.ratio={};this.knee={};this.attack={};this.release={};}connect(n){this.destination=n;}disconnect(){}}
 function setup(){
@@ -12,13 +12,13 @@ function setup(){
    start(event){this.events.push(event);return ()=>{this.stops++;};},stop(){this.stops++;},dispose(){this.disposed=true;},resolve:()=>resolve(),reject:()=>reject(Error('network'))};
   instances.push(instance);return instance;
  }
- const synth=new Synth(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory,Sampler:factory,DrumMachine:factory,DrumAbuse:factory,Mallet:factory,Mellotron:factory,Smolken:factory,Versilian:factory}),onStatus:s=>statuses.push(s)});
+ const synth=new InstrumentSource(context,{loadLibrary:async()=>({SplendidGrandPiano:factory,ElectricPiano:factory,Soundfont:factory,Sampler:factory,DrumMachine:factory,DrumAbuse:factory,Mallet:factory,Mellotron:factory,Smolken:factory,Versilian:factory}),onStatus:s=>statuses.push(s)});
  return {synth,instances,statuses,context};
 }
 const flush=()=>new Promise(setImmediate);
 test('sample engine routes into capture bus and plays immediate velocity-sensitive notes',async()=>{
  const {synth,instances,context}=setup();const loading=synth.selectPreset(SAMPLES[0]);await flush();
- const inst=instances[0];assert.equal(inst.options.destination,synth.input);
+ const inst=instances[0];assert.equal(inst.options.destination,synth.output);
  synth.noteOn('early',60);assert.equal(inst.events.length,0,'no deferred notes during load');
  inst.resolve();await loading;synth.noteOn('a',60,75,'usb:0');
  assert.equal(inst.events[0].time,context.currentTime);assert.equal(inst.events[0].velocity,playableVelocity(75));
@@ -81,7 +81,7 @@ test('every additional sampler routes to the live bus with correct bank or sourc
  for(const engine of ['electric','machine','abuse','mallet','mellotron','smolken','versilian','soundfont']){
   const {synth,instances}=setup();
   const loading=synth.selectPreset({id:'test',name:'Test',engine,instrument:'test',kit:'MusyngKite'});
-  await flush();const inst=instances[0];assert.equal(inst.options.destination,synth.input);
+  await flush();const inst=instances[0];assert.equal(inst.options.destination,synth.output);
   if(engine==='abuse')assert.deepEqual(inst.options.source,{kind:'machine',machine:'test'});
   else assert.equal(inst.options.instrument,'test');
   if(engine==='soundfont')assert.equal(inst.options.kit,'MusyngKite');
@@ -98,4 +98,12 @@ test('named drum kits preserve tails, choke hats and ignore unmapped keys',async
  assert.equal(inst.events.at(-1).note,'closed-hihat');
  const count=inst.events.length;synth.noteOn('unused',2,100);assert.equal(inst.events.length,count);
  synth.panic();
+});
+
+test('disposing during download cannot resurrect a source or retain its sampler',async()=>{
+ const {synth,instances}=setup();const loading=synth.selectPreset(SAMPLES[0]);await flush();
+ const instance=instances[0];synth.dispose();
+ assert.equal(synth.ready,false);assert.equal(instance.disposed,true);
+ instance.resolve();assert.equal(await loading,false);assert.equal(synth.sampler,null);
+ synth.noteOn('late',60);assert.equal(instance.events.length,0);
 });

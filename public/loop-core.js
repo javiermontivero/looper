@@ -1,10 +1,10 @@
 // Sample-clock transport. Only live instrument input is captured.
-const emptyTrack=()=>({data:null,length:0,audioLength:0,bars:0,pendingBars:0,changeAt:0,position:0,edge:0,hasAudio:false,muted:false,volume:70,gain:1,mode:'empty'});
+const emptyTrack=()=>({data:null,length:0,audioLength:0,bars:0,pendingBars:0,changeAt:0,position:0,edge:0,hasAudio:false,muted:false,gain:1,mode:'empty'});
 export class LoopCore {
  constructor(rate,{maxSeconds=60,minSeconds=.25,countInBeats=8}={}){
   this.rate=rate;this.capacity=Math.ceil(rate*maxSeconds);this.minimum=Math.ceil(rate*minSeconds);
   this.transport=0;this.recordStart=0;this.pendingAt=0;this.lastBeat=-1;this.length=0;this.baseLength=rate*8;this.position=0;this.bpm=120;this.referenceBpm=120;this.speed=1;
-  this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;this.paused=false;
+  this.active=-1;this.pending=-1;this.captured=0;this.paused=false;
   this.tracks=[emptyTrack()];this.renderTracks=[];this.nextChange=Infinity;this.revision=0;this.message='';
   this.countInBeats=countInBeats;this.countInRemaining=0;this.countInTotal=0;
   this.metronome=false;this.beatPhase=1;
@@ -45,13 +45,12 @@ export class LoopCore {
  start(i,origin=this.transport){
   this.countInRemaining=0;this.countInTotal=0;
   if(!this.length){this.transport=0;origin=0;this.referenceBpm=this.bpm;this.speed=1;this.lastBeat=-1;}
-  this.recordStart=origin;this.pending=-1;this.active=i;this.captured=Math.max(0,this.transport-origin);this.closingAt=0;this.paused=false;
+  this.recordStart=origin;this.pending=-1;this.active=i;this.captured=Math.max(0,this.transport-origin);this.paused=false;
   const t=this.tracks[i];t.muted=false;t.mode=t.hasAudio?'overdub':'recording';
   if(!t.hasAudio){t.length=0;t.position=0;}
   this.touch();
  }
  requestFinish(){if(this.active<0){this.cancelPending();this.touch();}else this.finish();}
- captureLimit(){return this.capacity;}
  command(c){
   if(!c||typeof c.type!=='string')return;
   if(c.type==='restore'){
@@ -73,14 +72,13 @@ export class LoopCore {
   if(c.type==='resume'){this.paused=false;this.touch();return;}
   if(c.type==='reset'){
    this.countInRemaining=0;this.countInTotal=0;this.clickIndex=this.click.length;
-   this.transport=0;this.lastBeat=-1;this.tracks=[emptyTrack()];this.active=-1;this.pending=-1;this.closingAt=0;this.captured=0;
+   this.transport=0;this.lastBeat=-1;this.tracks=[emptyTrack()];this.active=-1;this.pending=-1;this.captured=0;
    this.length=0;this.baseLength=this.rate*60/this.bpm*16;this.position=0;this.paused=false;this.referenceBpm=this.bpm;this.speed=1;
    this.metronome=false;this.beatPhase=1;this.touch();return;
   }
   if(c.type==='stop'){this.requestFinish();return;}
   const i=c.track;if(!Number.isInteger(i)||i<0||i>=this.tracks.length)return;
   const t=this.tracks[i];
-  if(c.type==='volume'){if(Number.isFinite(c.value)){t.volume=Math.max(0,Math.min(100,c.value));this.touch();}return;}
   if(c.type==='prepare'){if(!t.data&&c.data instanceof Float32Array&&c.data.length===this.capacity)t.data=c.data;return;}
   if(c.type==='shorten'||c.type==='lengthen'){
    if(!t.hasAudio)return;
@@ -95,8 +93,8 @@ export class LoopCore {
   if(c.type==='mute'){if(t.hasAudio){t.muted=!t.muted;this.touch();}return;}
   if(c.type==='clear'){
    if(this.pending===i)this.cancelPending();
-   if(this.active===i){this.active=-1;this.captured=0;this.closingAt=0;}
-   this.tracks[i]={...emptyTrack(),volume:t.volume,gain:t.volume/70};this.recalculate();if(!this.length&&this.pending>=0&&!this.countInRemaining)this.armFirst(this.pending);this.touch();return;
+   if(this.active===i){this.active=-1;this.captured=0;}
+   this.tracks[i]=emptyTrack();this.recalculate();if(!this.length&&this.pending>=0&&!this.countInRemaining)this.armFirst(this.pending);this.touch();return;
   }
   if(c.type!=='record'&&c.type!=='trigger')return;
   if(this.pending===i){this.cancelPending();this.touch();return;}
@@ -120,7 +118,7 @@ export class LoopCore {
   const t=this.tracks[this.active],first=!this.tracks.some(t=>t.hasAudio);
   if(!t.hasAudio){
    if(this.captured<this.minimum){
-    t.data.fill(0);t.length=0;t.mode='empty';this.active=-1;this.captured=0;this.closingAt=0;
+    t.data.fill(0);t.length=0;t.mode='empty';this.active=-1;this.captured=0;
     this.recalculate();this.touch('Grabá al menos un cuarto de segundo.');return;
    }
    t.audioLength=Math.ceil(this.captured);
@@ -130,7 +128,7 @@ export class LoopCore {
    t.position=this.phase(t.length);
    t.edge=Math.ceil(this.rate*.002);
   }
-  t.hasAudio=true;t.mode='playing';this.active=-1;this.captured=0;this.closingAt=0;
+  t.hasAudio=true;t.mode='playing';this.active=-1;this.captured=0;
   this.recalculate();this.touch();
  }
  process(input,output,trackOutputs){
@@ -153,7 +151,7 @@ export class LoopCore {
    const sample=Number.isFinite(input?.[frame])?input[frame]:0;
    const recording=this.active>=0?this.tracks[this.active]:null;
    for(const t of this.renderTracks){
-    const target=t.muted?0:t.volume/70;
+    const target=t.muted?0:1;
     if(t.gain!==target)t.gain+=Math.max(-ramp,Math.min(ramp,target-t.gain));
     const position=this.phase(t.length);
     if(t.gain>0){
@@ -196,10 +194,10 @@ export class LoopCore {
  state(){
   return {length:this.length,baseLength:this.baseLength,position:this.position,seconds:this.length/this.rate,
    baseSeconds:this.baseLength/this.rate/this.speed,metronome:this.metronome,bpm:this.bpm,referenceBpm:this.referenceBpm,speed:this.speed,
-   elapsed:this.captured/this.rate/this.speed,active:this.active,pending:this.pending,closing:this.closingAt>0,paused:this.paused,
+   elapsed:this.captured/this.rate/this.speed,active:this.active,pending:this.pending,paused:this.paused,
    countInRemaining:this.countInRemaining,countInTotal:this.countInTotal,
    countInBeat:this.countInRemaining?Math.min(this.countInBeats-1,Math.floor((this.countInTotal-this.countInRemaining)*this.bpm/(60*this.rate))):null,
    revision:this.revision,message:this.message,
-   tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,volume:t.volume,position:t.position,mode:t.mode,length:t.length,audioLength:t.audioLength,bars:t.bars,pendingBars:t.pendingBars,canOverdub:t.length<=this.capacity,multiple:this.baseLength?t.length/this.baseLength:0}))};
+   tracks:this.tracks.map(t=>({hasAudio:t.hasAudio,muted:t.muted,position:t.position,mode:t.mode,length:t.length,audioLength:t.audioLength,bars:t.bars,pendingBars:t.pendingBars,canOverdub:t.length<=this.capacity,multiple:this.baseLength?t.length/this.baseLength:0}))};
  }
 }

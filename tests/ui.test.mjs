@@ -57,7 +57,7 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  }};
  class AudioContext{constructor(){this.state='running';this.sampleRate=1000;}async resume(){}}
  const played=[],loaded=[];let masterGain;
- class Synth{noteOn(...args){played.push(args);}constructor(){this.input={};this.compressor={};}volume(value){masterGain=value;}panic(){}noteOff(){}selectPreset(p){loaded.push(p.id);this.preset=p;this.ready=true;return Promise.resolve(true);}}
+ class InstrumentSource{noteOn(...args){played.push(args);}constructor(){this.output={};}panic(){}noteOff(){}selectPreset(p){loaded.push(p.id);this.preset=p;this.ready=true;return Promise.resolve(true);}}
  const holds=new Map();let timerId=0;
  class TestTrackButtons extends TrackButtons{
   constructor(dispatch,options){super(dispatch,{...options,schedule:fn=>{const id=++timerId;holds.set(id,fn);return id;},cancel:id=>holds.delete(id)});}
@@ -65,13 +65,20 @@ test('UI boots and track buttons actually start, close, overdub and mute capture
  const soundTimers=new Map();let soundTimerId=10000;
  const configurations=[],effectChanges=[];
  class SessionStore{constructor(){this.dirty=false;}async load(){return null;}config(c){configurations.push(c);}snapshot(){}}
+ class AudioEngine{
+  static async create(){return new AudioEngine();}
+  constructor(){this.context=new AudioContext();this.capture={};this.mixer=new Mixer();}
+  setSource(source){this.source=source;}
+  volume(value){masterGain=value;}
+  dispose(){}
+ }
  class Mixer{constructor(){this.master={input:{}};this.tracks=Array.from({length:7},()=>({input:{}}));}select(slot){this.selected=slot;}set(slot,c){effectChanges.push({slot,chain:structuredClone(c)});}}
  const globals={document,window:{isSecureContext:false,addEventListener(){}},
   navigator:{},localStorage:{getItem(key){return key==='looper:mappings'?JSON.stringify({next:{device:'keyboard',channel:9,type:'note',number:32},track0:{device:'keyboard',channel:0,type:'cc',number:20}}):null;},setItem(){}},
   requestAnimationFrame:callback=>setImmediate(callback),
   matchMedia:()=>({matches:true,addEventListener(){}}),confirm:()=>true,
   setTimeout:(fn,ms)=>{if(ms===250){const id=++soundTimerId;soundTimers.set(id,fn);return id;}return setTimeout(fn,ms);},clearTimeout:id=>{if(soundTimers.has(id))soundTimers.delete(id);else clearTimeout(id);},performance,
-  AudioContext,Synth,PRESETS,EFFECTS,emptyChain,Mixer,SessionStore,cleanConfig,prepareRestore,validateSnapshot,loadInstrumentCatalog:async()=>({added:0,issues:[]}),SoundBrowser,RelativePots,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
+  AudioContext,AudioEngine,InstrumentSource,PRESETS,EFFECTS,emptyChain,Mixer,SessionStore,cleanConfig,prepareRestore,validateSnapshot,loadInstrumentCatalog:async()=>({added:0,issues:[]}),SoundBrowser,RelativePots,LatencyStats,Looper:FakeLooper,decode,matches,learnMapping,buttonDown,TrackButtons:TestTrackButtons};
  vm.runInNewContext(source,globals);
  const settle=()=>new Promise(setImmediate);await settle();await settle();
  assert.equal(ids.get('app').inert,false);

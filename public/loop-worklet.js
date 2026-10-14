@@ -1,7 +1,7 @@
 import {LoopCore} from './loop-core.js';
 class LoopProcessor extends AudioWorkletProcessor {
   constructor(){
-    super();this.core=new LoopCore(sampleRate);this.tick=0;this.lastRevision=-1;this.lastCountBeat=null;
+    super();this.core=new LoopCore(sampleRate);this.trackOutputs=[];this.tick=0;this.lastRevision=-1;this.lastCountBeat=null;
     this.port.onmessage=event=>{
       const m=event.data;
       if(m.type==='snapshot'){
@@ -28,7 +28,10 @@ class LoopProcessor extends AudioWorkletProcessor {
   }
   process(inputs,outputs){
     const output=outputs[0]?.[0];if(!output)return true;
-    this.core.process(inputs[0]?.[0],output,outputs.length>1?outputs.slice(1).map(o=>o[0]):undefined);
+    // Reuse the routing array; no slice/map allocations on every audio quantum.
+    this.trackOutputs.length=outputs.length-1;
+    for(let i=1;i<outputs.length;i++)this.trackOutputs[i-1]=outputs[i][0];
+    this.core.process(inputs[0]?.[0],output,outputs.length>1?this.trackOutputs:undefined);
     this.copySnapshot();
     this.tick+=output.length;
     const countBeat=this.core.countInRemaining?Math.min(this.core.countInBeats-1,Math.floor((this.core.countInTotal-this.core.countInRemaining)*this.core.bpm/(60*sampleRate))):null;

@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const root=new URL('./public/',import.meta.url);
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.sh':'text/plain; charset=utf-8'};
-const allowed=new Set(['index.html','style.css','app.js','synth.js','latency.js','instruments.js','catalog.js','sound-browser.js','sounds.html','midi.js','icon.svg','setup-https.sh','looper.js','loop-core.js','loop-worklet.js','loops.css','effects.js','session.js','session-worker.js']);
+const allowed=new Set(['index.html','style.css','app.js','synth.js','latency.js','instruments.js','catalog.js','sound-browser.js','sounds.html','midi.js','icon.svg','setup-https.sh','looper.js','loop-core.js','loop-worklet.js','loops.css','effects.js','session.js','session-worker.js','audio-engine.js','tone-runtime.js']);
 export async function handler(req,res){
   const url=new URL(req.url,'http://localhost');
   let path=url.pathname.replace(/^\/looper(?=\/|$)/,'').replace(/^\//,'');
@@ -12,7 +12,7 @@ export async function handler(req,res){
   if(!allowed.has(path)){res.writeHead(404);res.end('Not found');return;}
   try{
     const body=await readFile(new URL(path,root));
-    res.writeHead(200,{'Content-Type':types[path.slice(path.lastIndexOf('.'))]||'application/octet-stream','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/smplr@1.1.0/dist/; style-src 'self'; img-src 'self'; connect-src 'self' https://smpldsnds.github.io https://gleitz.github.io; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",'Permissions-Policy':'midi=(self)'});
+    res.writeHead(200,{'Content-Type':types[path.slice(path.lastIndexOf('.'))]||'application/octet-stream','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/smplr@1.1.0/dist/ https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js; style-src 'self'; img-src 'self'; connect-src 'self' https://smpldsnds.github.io https://gleitz.github.io; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",'Permissions-Policy':'midi=(self)'});
     res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(500);res.end('Unable to serve file');}
 }

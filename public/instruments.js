@@ -41,15 +41,17 @@ const DRUM_FILES={
 };
 export function drumForNote(note){return DRUM_NOTES[note>=60&&note<=83?note-24:note];}
 
-// Stable input bus: both engines feed the exact same live monitor and loop capture.
-export class Synth extends FMSynth{
+// Instrument source: owns voices and downloads, never monitor/recorder routing.
+export class InstrumentSource{
  constructor(context,{loadLibrary=importSmplr,onStatus=()=>{}}={}){
-  super(context);this.loadLibrary=loadLibrary;this.onStatus=onStatus;
+  this.context=context;this.output=context.createGain();this.fm=new FMSynth(context,this.output);
+  this.preset=FM_PRESETS[0];this.loadLibrary=loadLibrary;this.onStatus=onStatus;
   this.sampleVoices=new Map();this.sampleSustain=new Set();this.sampleBends=new Map();
   this.ready=true;this.selection=0;this.serial=0;this.loading=Promise.resolve();
  }
+ get voices(){return this.fm.voices;}
  async selectPreset(p){
-  const selection=++this.selection;this.panic();this.preset=p;
+  const selection=++this.selection;this.panic();this.preset=p;this.fm.preset=p;
   this.controller?.abort();this.sampler?.dispose();this.sampler=null;this.drumMap=null;
   if(!p.engine){this.ready=true;this.onStatus('');return true;}
   this.ready=false;this.onStatus('Cargando '+p.name+'…');
@@ -66,7 +68,7 @@ export class Synth extends FMSynth{
     const storage={fetch:url=>fetch(
      String(url).endsWith('/wurlitzer-ep200/samples/ab6mp.ogg')?String(url).replace(/\.ogg$/,'.m4a'):url,
      {signal:controller.signal})};
-    const options={destination:this.input,volume:85,storage};
+    const options={destination:this.output,volume:85,storage};
     if(p.engine==='piano'){
      instrument=lib.SplendidGrandPiano(this.context,{...options,
       notesToLoad:{notes:Array.from({length:21},(_,i)=>36+i*3),fallback:'nearest'}});
@@ -99,7 +101,7 @@ export class Synth extends FMSynth{
  }
  noteOn(key,note,velocity=100,channel='local'){
   if(!this.ready)return; // Never queue notes to sound unexpectedly after a download.
-  if(!this.preset.engine)return super.noteOn(key,note,velocity,channel);
+  if(!this.preset.engine)return this.fm.noteOn(key,note,velocity,channel);
   velocity=playableVelocity(velocity);if(!velocity){this.noteOff(key);return;}
   const namedKit=['machine','abuse'].includes(this.preset.engine);
   const percussion=this.preset.engine==='drums'||namedKit||this.preset.percussion;
@@ -125,27 +127,31 @@ export class Synth extends FMSynth{
   voice.stop();this.sampleVoices.delete(key);
  }
  noteOff(key){
-  super.noteOff(key);
+  this.fm.noteOff(key);
   const voice=this.sampleVoices.get(key);if(!voice)return;
   voice.held=false;if(!this.sampleSustain.has(voice.channel))this.stopSample(key);
  }
  pedal(channel,down){
-  super.pedal(channel,down);
+  this.fm.pedal(channel,down);
   if(down)this.sampleSustain.add(channel);
   else{this.sampleSustain.delete(channel);for(const [key,v] of this.sampleVoices)if(v.channel===channel&&!v.held&&!v.drum)this.stopSample(key);}
  }
  bend(channel,value){
-  super.bend(channel,value);
+  this.fm.bend(channel,value);
   // smplr's public API applies detune at note-on; FM supports continuous bends.
   this.sampleBends.set(channel,(value-8192)/8192*200);
  }
  channelOff(channel){
-  super.channelOff(channel);this.sampleSustain.delete(channel);
+  this.fm.channelOff(channel);this.sampleSustain.delete(channel);
   for(const [key,v] of this.sampleVoices)if(v.channel===channel)this.stopSample(key);
  }
+ dispose(){
+  ++this.selection;this.ready=false;this.controller?.abort();this.panic();
+  this.sampler?.dispose();this.sampler=null;this.fm.dispose();this.output.disconnect();
+ }
  panic(){
-  super.panic();
-  if(this.sampleVoices){for(const key of this.sampleVoices.keys())this.stopSample(key);}
-  this.sampler?.stop();this.sampleSustain?.clear();this.sampleBends?.clear();
+  this.fm.panic();
+  for(const key of this.sampleVoices.keys())this.stopSample(key);
+  this.sampler?.stop();this.sampleSustain.clear();this.sampleBends.clear();
  }
 }

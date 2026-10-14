@@ -1,14 +1,15 @@
+import {AudioEngine} from './audio-engine.js';
 import {SoundBrowser,RelativePots} from './sound-browser.js';
 import {LatencyStats} from './latency.js';
-import {PRESETS,Synth,loadInstrumentCatalog} from './instruments.js';
+import {PRESETS,InstrumentSource,loadInstrumentCatalog} from './instruments.js';
 import {decode,matches,learnMapping,buttonDown,TrackButtons} from './midi.js';
 import {Looper} from './looper.js';
-import {EFFECTS,emptyChain,Mixer} from './effects.js';
+import {EFFECTS,emptyChain} from './effects.js';
 import {SessionStore,cleanConfig,prepareRestore,validateSnapshot} from './session.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const read=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
-let synth,context,access,selected='',learning=null,octave=4,starting;
+let synth,audio,context,access,selected='',learning=null,octave=4,starting;
 let mappings=read('looper:mappings',{});if(!mappings||typeof mappings!=='object'||Array.isArray(mappings))mappings={};
 const savedCatalogPreset=read('looper:catalog-preset',null)||read('looper:preset','piano');
 let preset=PRESETS.find(p=>p.id===read('looper:preset','piano'))||PRESETS[0];
@@ -39,8 +40,18 @@ async function activate(){
  if(context?.state==='running')return true;
  if(starting)return starting;
  starting=(async()=>{try{
-  if(!context){context=new AudioContext({latencyHint:'interactive'});synth=new Synth(context,{onStatus:message=>{$('#sound-status').textContent=message;$('#sound-status').hidden=!message;}});synth.selectPreset(preset);synth.volume(volume/100);mixer=new Mixer(context,synth);chains.forEach((c,i)=>mixer.set(i-1,c));mixer.select(selectedTrack<0?-1:trackNotes[selectedTrack]-31);context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};}
-  await context.resume();return context.state==='running';
+  if(!audio){
+   const engine=await AudioEngine.create();
+   try{
+    synth=new InstrumentSource(engine.context,{onStatus:message=>{$('#sound-status').textContent=message;$('#sound-status').hidden=!message;}});
+    engine.setSource(synth);engine.volume(volume/100);
+    mixer=engine.mixer;chains.forEach((c,i)=>mixer.set(i-1,c));
+    mixer.select(selectedTrack<0?-1:trackNotes[selectedTrack]-31);
+   }catch(error){synth?.dispose();synth=null;engine.dispose();throw error;}
+   audio=engine;context=audio.context;synth.selectPreset(preset);
+   context.onstatechange=()=>{$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';};
+  }
+  await context.resume();$('#power').textContent=context.state==='running'?'Audio ✓':'Activar';return context.state==='running';
  }catch(e){notice('No se pudo activar el audio: '+errorText(e));return false;}
  finally{starting=null;}})();return starting;
 }
@@ -67,9 +78,9 @@ function queueSound(){
 function cancelSoundSelection(){
  clearTimeout(soundTimer);soundTimer=null;soundBrowser.choose(preset.id);renderSoundChoice();
 }
-function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';synth?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);scheduleConfig();}
+function setVolume(v){volume=Math.max(0,Math.min(100,Math.round(v)));$('#volume').value=volume;$('#volume-value').textContent=volume+'%';audio?.volume(volume/100);clearTimeout(volumeSaveTimer);volumeSaveTimer=setTimeout(()=>save('looper:volume',volume),300);scheduleConfig();}
 let lastMidiDelay=null,volumeSaveTimer;
-function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;const started=performance.now();try{if(directMidiClick)synth.testClick();else synth.noteOn(key,note,velocity,channel);}finally{latencyStats.add('note',performance.now()-started);}}
+function on(key,note,velocity=100,channel='local'){if(!synth||context.state!=='running')return;const started=performance.now();try{if(directMidiClick)audio.testClick();else synth.noteOn(key,note,velocity,channel);}finally{latencyStats.add('note',performance.now()-started);}}
 function off(key){synth?.noteOff(key);}
 function panic(){cancelSoundSelection();synth?.panic();computer.clear();latches.clear();trackButtons.reset();}
 function renderMappings(){for(const b of $$('[data-learn]')){const action=b.dataset.learn,m=mappings[action];b.classList.toggle('learning',learning===action);b.textContent=learning===action?'Cancelar':m?(m.type==='cc'?'CC ':'Nota ')+m.number:'Asignar';}}
@@ -151,7 +162,7 @@ async function ensureLooper(){
  if(looperStarting)return looperStarting;
  if(looper)return looper;
 
- if(!looperStarting)looperStarting=Looper.create(context,synth.input,mixer,renderLoop,notice,onSnapshot)
+ if(!looperStarting)looperStarting=Looper.create(context,audio.capture,mixer,renderLoop,notice,onSnapshot)
    .then(async value=>{looper=value;looper.route(trackNotes);if(pendingSnapshot){restoringAudio=true;$('#app').inert=true;try{const restored=await prepareRestore(pendingSnapshot,context.sampleRate);pendingSnapshot=null;await looper.restore(restored);for(let i=restored.tracks.length;i<trackNotes.length;i++)looper.command('add');}finally{restoringAudio=false;$('#app').inert=false;}}else{for(let i=1;i<trackNotes.length;i++)looper.command('add');looper.command('tempo',undefined,bpm);}return value;}).finally(()=>{looperStarting=null;});
  return looperStarting;
 }
@@ -403,8 +414,8 @@ perfDetails.ontoggle=()=>{if(perfDetails.open)showPerformance();};
 $('#refresh-performance').onclick=showPerformance;
 
 $('#direct-midi-click').onchange=e=>{panic();directMidiClick=e.target.checked;latencyStats.reset();showPerformance();};
-$('#test-click').onpointerdown=async e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();if(await activate())synth.testClick();};
-$('#test-click').onclick=async e=>{if(e.detail===0&&await activate())synth.testClick();};
+$('#test-click').onpointerdown=async e=>{if(e.button!==undefined&&e.button!==0)return;e.preventDefault();if(await activate())audio.testClick();};
+$('#test-click').onclick=async e=>{if(e.detail===0&&await activate())audio.testClick();};
 $('#reset-performance').onclick=()=>{latencyStats.reset();showPerformance();};
 
 async function restoreLocal(){

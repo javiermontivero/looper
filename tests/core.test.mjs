@@ -52,23 +52,13 @@ test('HTTP serves health and prefixed assets; refuses paths outside allowlist',a
   const html=await fetch(base+'/looper/');assert.equal(html.status,200);assert.match(await html.text(),/<title>Looper<\/title>/);
   const js=await fetch(base+'/looper/app.js');assert.match(js.headers.get('content-type'),/javascript/);
   assert.match(js.headers.get('permissions-policy'),/midi/);
+  assert.ok(js.headers.get('content-security-policy').includes('https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js'));
   assert.equal((await fetch(base+'/server.mjs')).status,404);
   assert.equal((await fetch(base+'/looper/setup-https.sh')).status,200);
-  for(const asset of ['looper.js','loop-core.js','loop-worklet.js','loops.css'])assert.equal((await fetch(base+'/looper/'+asset)).status,200,asset);
+  for(const asset of ['looper.js','loop-core.js','loop-worklet.js','loops.css','audio-engine.js','tone-runtime.js'])assert.equal((await fetch(base+'/looper/'+asset)).status,200,asset);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
 
-test('monitor uses a memoryless safety stage and diagnostic click bypasses capture',()=>{
- const c=context(),oscillators=[],gains=[];
- c.createOscillator=()=>{const n=new Node();oscillators.push(n);return n;};
- c.createGain=()=>{const n=new Node();gains.push(n);return n;};
- c.createDynamicsCompressor=()=>{throw Error('look-ahead must not return');};
- const s=new Synth(c);assert.equal(s.input.destination,s.compressor);assert.equal(s.compressor.oversample,'none');
- assert.equal(s.compressor.destination,s.master);assert.equal(s.master.destination,c.destination);
- s.testClick();const osc=oscillators[0],amp=gains.at(-1);
- assert.equal(amp.destination,s.master);assert.notEqual(amp.destination,s.input);
- assert.ok(osc.stopped<=c.currentTime+.041);osc.onended();assert.equal(amp.disconnected,true);
-});
 
 test('velocity curve preserves ordering, raises quiet strikes and keeps release and peak unchanged',()=>{
  assert.equal(playableVelocity(0),0);assert.equal(playableVelocity(NaN),0);assert.equal(playableVelocity(-1),0);
@@ -77,4 +67,10 @@ test('velocity curve preserves ordering, raises quiet strikes and keeps release 
  const synth=new Synth(context());synth.noteOn('soft',60,1);
  assert.ok(Math.abs(synth.voices.get('soft').amp.gain.value-.18*(36/127)*PRESETS[0].sustain)<1e-9);
  synth.noteOn('soft',60,0);assert.equal(synth.voices.get('soft').released,true);
+});
+
+test('FM disposal also disconnects release tails stolen by retrigger',()=>{
+ const s=new Synth(context());s.noteOn('x',60);const old=s.voices.get('x');
+ s.noteOn('x',64);assert.equal(s.tails.size,1);s.dispose();
+ assert.equal(old.amp.disconnected,true);assert.equal(s.voices.size,0);assert.equal(s.tails.size,0);
 });
